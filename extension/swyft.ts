@@ -69,9 +69,9 @@ export function hum(volume?: number): { kill: () => void } {
 }
 
 /** Play the short "listening" earcon (fire-and-forget). */
-export function chime(): void {
+export function chime(style = "bloop"): void {
 	try {
-		spawn(SWYFT_BIN, ["chime"], { stdio: "ignore" });
+		spawn(SWYFT_BIN, ["chime", "--style", style], { stdio: "ignore" });
 	} catch {}
 }
 
