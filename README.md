@@ -1,15 +1,39 @@
 # pi-macos-voice
 
-Talk to the [pi](https://github.com/earendil-works/pi-mono) coding agent with your
+Talk to the [pi](https://github.com/earendil-works/pi) coding agent with your
 voice, and have its replies read back to you — using native macOS speech, fully
 on-device.
 
 - **Dictation (STT):** speak and your words become prompts.
 - **Read-aloud (TTS):** the agent's replies are spoken back.
 - **Interrupt anytime:** say "stop" (or "shut up") to cut off a reply.
+- **Mute/unmute:** say "mute" to pause listening, "unmute" to resume.
 - **Thinking sound:** a soft ambient tone plays while the agent works.
 
 It ships as a toggleable pi extension backed by a small Swift helper (`swyft`).
+
+---
+
+## Quickstart
+
+1. **Install pi** (if you haven't):
+   ```sh
+   npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+   ```
+2. **Add the voice bridge:**
+   ```sh
+   pi install git:github.com/zenyui/pi-macos-voice
+   ```
+3. **Turn it on:** run pi, type `/voice`, and click Allow when macOS asks for
+   Microphone + Speech Recognition (for **Swyft**).
+
+Then just talk:
+
+- Speak your request — on a short pause it's sent automatically.
+- Say **"stop"** (or "shut up") to cut off a reply.
+- Say **"mute"** to pause listening, **"unmute"** to resume.
+- Run `/voice` again to switch to push-to-talk (review before Enter), and once
+  more to turn voice off. A soft chime means it's listening again.
 
 ---
 
