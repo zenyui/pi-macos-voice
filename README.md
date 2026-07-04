@@ -30,7 +30,7 @@ the extension in every session. Start voice mode with `/voice`; the first time,
 macOS asks you to allow **Microphone** and **Speech Recognition** for **Swyft**
 (see [Permissions](#permissions)).
 
-To pin a version, append a ref: `pi install git:github.com/zenyui/pi-macos-voice@v0.1.0`.
+To pin a version, append a ref: `pi install git:github.com/zenyui/pi-macos-voice@v0.2.0`.
 Remove with `pi remove pi-macos-voice`.
 
 **How it installs:** pi `git clone`s the repo into `~/.pi/agent/git/github.com/zenyui/pi-macos-voice`,
