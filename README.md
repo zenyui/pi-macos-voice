@@ -15,38 +15,23 @@ It ships as a toggleable pi extension backed by a small Swift helper (`swyft`).
 
 ## Requirements
 
-- **macOS on Apple Silicon (arm64).** The prebuilt binary is arm64-only; other
-  arches must build from source.
-- **Xcode command-line tools** (only if building from source): `xcode-select --install`.
+- **macOS on Apple Silicon (arm64).** The shipped binary is arm64-only.
+- **macOS 13+** (uses `Speech.framework` + `AVAudioEngine`).
 - **pi** ≥ 0.80.
-- **Node** ≥ 18 (bundled with pi's runtime is fine).
-- macOS 13+ (uses `Speech.framework` + `AVAudioEngine`).
 
 ## Install
 
 ```sh
-git clone <this repo>
-cd pi-macos-voice
-npm install        # dev types only; runtime deps come from pi
-npm run build      # compiles swyft, signs it, assembles Swyft.app
+pi install git:github.com/zenyui/pi-macos-voice
 ```
 
-Then register the extension with pi. Either run ad-hoc:
+That's it — pi fetches the package (prebuilt binary and app included) and loads
+the extension in every session. Start voice mode with `/voice`; the first time,
+macOS asks you to allow **Microphone** and **Speech Recognition** for **Swyft**
+(see [Permissions](#permissions)).
 
-```sh
-pi -e /absolute/path/to/pi-macos-voice/extension/index.ts
-```
-
-…or add it to `~/.pi/agent/settings.json` to load it in every session:
-
-```jsonc
-{
-  "extensions": ["/absolute/path/to/pi-macos-voice/extension/index.ts"]
-}
-```
-
-The extension finds its binaries in `bin/` relative to itself, so keep
-`extension/` and `bin/` together.
+To pin a version, append a ref: `pi install git:github.com/zenyui/pi-macos-voice@v0.1.0`.
+Remove with `pi remove pi-macos-voice`.
 
 ## Permissions
 
@@ -125,15 +110,28 @@ Swift constant and asserts `package.json` matches.
 - `tts --voice <id> --rate <wpm>` — pick a `say` voice / speed.
 - `hum --volume <0..1> --interval <sec>` — tune the thinking sound.
 
-## Building from source
+## For contributors
+
+Build from source and load the local checkout:
 
 ```sh
+git clone git@github.com:zenyui/pi-macos-voice.git
+cd pi-macos-voice
+npm install        # dev types only; runtime deps come from pi
 npm run build      # gen-version → swift build -c release → sign → assemble Swyft.app
 npm run clean      # remove build artifacts
 ```
 
-`bin/swyft` and `bin/Swyft.app` are committed so a fresh checkout works without
-building, on Apple Silicon.
+Requires the Xcode command-line tools (`xcode-select --install`). Then load the
+local copy without installing the package:
+
+```sh
+pi -e /absolute/path/to/pi-macos-voice/extension/index.ts
+```
+
+The extension finds its binaries in `bin/` relative to itself, so keep
+`extension/` and `bin/` together. `bin/swyft` and `bin/Swyft.app` are committed
+so a fresh checkout runs without building, on Apple Silicon.
 
 ## Troubleshooting
 

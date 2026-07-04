@@ -68,6 +68,13 @@ export function hum(volume?: number): { kill: () => void } {
 	return { kill: () => child.kill("SIGTERM") };
 }
 
+/** Play the short "listening" earcon (fire-and-forget). */
+export function chime(style = "bloop"): void {
+	try {
+		spawn(SWYFT_BIN, ["chime", "--style", style], { stdio: "ignore" });
+	} catch {}
+}
+
 export interface SttSession {
 	stop: () => void;
 }

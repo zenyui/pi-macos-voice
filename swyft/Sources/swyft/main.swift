@@ -53,7 +53,7 @@ case "version":
         "name": "swyft",
         "version": swyftVersion,
         "protocol": swyftProtocol,
-        "capabilities": ["version", "tts", "stt", "doctor", "hum"],
+        "capabilities": ["version", "tts", "stt", "doctor", "hum", "chime"],
     ])
     exit(0)
 
@@ -65,6 +65,9 @@ case "stt":
 
 case "hum":
     runHum(rest)
+
+case "chime":
+    runChime(rest)
 
 case "doctor":
     runDoctor(rest)
@@ -84,6 +87,8 @@ case "help", "-h", "--help":
         --on-device           force on-device recognition
       hum                     play a soft ambient thinking sound until killed
         --volume <0..1>       loudness (default: 0.05)
+      chime                   play a short "listening" earcon and exit
+        --volume <0..1>       loudness (default: 0.18)
       doctor                  request/report mic + speech permissions as JSON
 
     """.utf8))
