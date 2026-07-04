@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { toSpeakable } from "./speakable";
 import {
 	binariesExist,
+	chime,
 	getVersion,
 	hum,
 	speak,
@@ -84,8 +85,13 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function setState(next: VoiceState, ctx: ExtensionContext) {
+		const prev = state;
 		state = next;
 		ctx.ui.setStatus("swyft", statusFor());
+		// Play a short earcon when we hand the turn back to the user (finished
+		// thinking/speaking). Fires within the TTS mute tail, so it isn't
+		// re-transcribed as input.
+		if (next === "listening" && (prev === "thinking" || prev === "speaking")) chime();
 	}
 
 	function stopHum() {
