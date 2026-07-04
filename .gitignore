@@ -1,4 +1,9 @@
 .DS_Store
 .build/
+swyft/.build/
 DerivedData/
 *.xcuserstate
+node_modules/
+
+# Generated build artifacts
+swyft/Sources/swyft/Version.swift

@@ -1,0 +1,27 @@
+{
+  "name": "pi-macos-voice",
+  "version": "0.1.0",
+  "description": "Native macOS dictation + text-to-speech bridge for the pi coding agent.",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extension/index.ts"
+    ]
+  },
+  "scripts": {
+    "gen-version": "node scripts/gen-version.mjs",
+    "build:swift": "swift build --package-path swyft -c release",
+    "build": "npm run gen-version && npm run build:swift && npm run install-bin && npm run build:app",
+    "install-bin": "mkdir -p bin && cp \"$(swift build --package-path swyft -c release --show-bin-path)/swyft\" bin/swyft && chmod +x bin/swyft && codesign --force --sign - bin/swyft",
+    "build:app": "bash scripts/build-app.sh",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf swyft/.build bin/swyft bin/Swyft.app swyft/Sources/swyft/Version.swift"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.80.3",
+    "@earendil-works/pi-coding-agent": "latest",
+    "@types/node": "^22",
+    "typebox": "^1.3.3",
+    "typescript": "^5"
+  }
+}
