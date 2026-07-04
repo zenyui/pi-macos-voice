@@ -54,6 +54,20 @@ function containsStopWord(text: string): boolean {
 	return STOP_PATTERN.test(text);
 }
 
+// Voice mute: pause/resume dictation without leaving voice mode.
+// - mute: strict whole-utterance match (so "mute the audio" isn't a mute).
+// - unmute: loose match anywhere (easy to turn back on even with a noisy
+//   transcript, since while muted the only thing we listen for is unmute).
+const MUTE_WORDS = new Set(["mute", "pause", "hush"]);
+const UNMUTE_PATTERN = /\b(unmute|resume|wake up|listen up|start listening)\b/i;
+function isMuteWord(text: string): boolean {
+	const t = text.trim().toLowerCase().replace(/[.!?,]+$/, "").trim();
+	return MUTE_WORDS.has(t);
+}
+function isUnmuteWord(text: string): boolean {
+	return UNMUTE_PATTERN.test(text);
+}
+
 export default function (pi: ExtensionAPI) {
 	// Voice mode is a small state machine driven entirely by events (pi lifecycle
 	// + STT messages) — no polling loop, per pi extension best practice.
@@ -62,6 +76,7 @@ export default function (pi: ExtensionAPI) {
 	let stt: SttSession | null = null;
 	let ready = false; // binary present + version ok
 	let autoSend = false; // false = push-to-send (fill prompt, you press Enter)
+	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
 
 	// TTS + speak queue.
@@ -80,7 +95,7 @@ export default function (pi: ExtensionAPI) {
 			case "off": return "";
 			case "thinking": return "🎙 thinking";
 			case "speaking": return "🎙 speaking";
-			default: return autoSend ? "🎙 auto" : "🎙 push";
+			default: return micMuted ? "🔇 muted" : autoSend ? "🎙 auto" : "🎙 push";
 		}
 	}
 
@@ -97,6 +112,16 @@ export default function (pi: ExtensionAPI) {
 	function stopHum() {
 		humming?.kill();
 		humming = null;
+	}
+
+	// Voice mute/unmute: pause or resume dictation without leaving voice mode.
+	function setMicMuted(on: boolean, ctx: ExtensionContext) {
+		if (micMuted === on) return;
+		micMuted = on;
+		ctx.ui.setWidget("swyft", []);
+		ctx.ui.setStatus("swyft", statusFor());
+		ctx.ui.notify(on ? 'Mic muted — say "unmute" to resume.' : "Mic live.", "info");
+		chime(on ? "down" : "bloop");
 	}
 
 	// --- Speak queue: items play to completion in order (no overlap). ------
@@ -153,6 +178,10 @@ export default function (pi: ExtensionAPI) {
 				if (state !== "thinking" && state !== "speaking") setState("listening", ctx);
 				break;
 			case "partial": {
+				if (micMuted) {
+					if (isUnmuteWord(msg.text)) setMicMuted(false, ctx);
+					break; // muted: ignore everything except "unmute"
+				}
 				const muted = inputMuted();
 				if (muted ? containsStopWord(msg.text) : isStopWord(msg.text)) {
 					handleStop(ctx);
@@ -166,6 +195,14 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.setWidget("swyft", []);
 				const text = msg.text.trim();
 				if (!text) break;
+				if (micMuted) {
+					if (isUnmuteWord(text)) setMicMuted(false, ctx);
+					break; // muted: ignore everything except "unmute"
+				}
+				if (isMuteWord(text)) {
+					setMicMuted(true, ctx);
+					break;
+				}
 				const muted = inputMuted();
 				if (muted ? containsStopWord(text) : isStopWord(text)) {
 					handleStop(ctx);
@@ -206,6 +243,7 @@ export default function (pi: ExtensionAPI) {
 	async function stopVoice(ctx: ExtensionContext) {
 		stt?.stop();
 		stt = null;
+		micMuted = false;
 		stopHum();
 		clearSpeakQueue();
 		ctx.ui.setWidget("swyft", []);
