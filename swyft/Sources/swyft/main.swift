@@ -1,7 +1,7 @@
 import Foundation
 
 // Version is injected at build time via gen-version (see scripts/gen-version.mjs),
-// which writes Version.swift from the repo-root VERSION file. Do not hand-edit.
+// which writes Version.swift from package.json. Do not hand-edit.
 
 /// Append a timestamped debug line to a log file (STT runs headless under
 /// `open`, so stderr is invisible). Path overridable via SWYFT_LOG.

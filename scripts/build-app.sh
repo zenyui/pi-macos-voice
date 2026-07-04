@@ -21,7 +21,7 @@ chmod +x "$APP/Contents/MacOS/swyft"
 /usr/libexec/PlistBuddy -c "Merge $PLIST" \
   -c "Add :CFBundleExecutable string swyft" \
   -c "Add :CFBundlePackageType string APPL" \
-  -c "Add :CFBundleShortVersionString string $(cat "$ROOT/VERSION")" \
+  -c "Add :CFBundleShortVersionString string $(node -p "require('$ROOT/package.json').version")" \
   -c "Add :LSUIElement bool true" \
   "$APP/Contents/Info.plist" 2>/dev/null || {
     # PlistBuddy can't Merge into a nonexistent file; seed then merge.
@@ -29,7 +29,7 @@ chmod +x "$APP/Contents/MacOS/swyft"
     /usr/libexec/PlistBuddy \
       -c "Add :CFBundleExecutable string swyft" \
       -c "Add :CFBundlePackageType string APPL" \
-      -c "Add :CFBundleShortVersionString string $(cat "$ROOT/VERSION")" \
+      -c "Add :CFBundleShortVersionString string $(node -p "require('$ROOT/package.json').version")" \
       -c "Add :LSUIElement bool true" \
       "$APP/Contents/Info.plist"
   }

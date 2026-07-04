@@ -104,8 +104,8 @@ keep replies short and speakable.
   replies through a **speak queue** (so replies never overlap), plays the hum
   while thinking, mutes self-echo while speaking, and handles stop words.
 
-Versions are single-sourced from `VERSION`; `npm run build` regenerates the
-Swift constant and asserts `package.json` matches.
+Versions are single-sourced from `package.json`; `npm run build` regenerates the
+Swift constant so the binary's `swyft version` stays in sync.
 
 ## Configuration
 
