@@ -178,10 +178,9 @@ export default function (pi: ExtensionAPI) {
 				if (state !== "thinking" && state !== "speaking") setState("listening", ctx);
 				break;
 			case "partial": {
-				if (micMuted) {
-					if (isUnmuteWord(msg.text)) setMicMuted(false, ctx);
-					break; // muted: ignore everything except "unmute"
-				}
+				// While muted, ignore partials entirely. Unmute is handled on the
+				// final only, so the unmute utterance isn't sent after resuming.
+				if (micMuted) break;
 				const muted = inputMuted();
 				if (muted ? containsStopWord(msg.text) : isStopWord(msg.text)) {
 					handleStop(ctx);
