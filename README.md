@@ -33,6 +33,13 @@ macOS asks you to allow **Microphone** and **Speech Recognition** for **Swyft**
 To pin a version, append a ref: `pi install git:github.com/zenyui/pi-macos-voice@v0.1.0`.
 Remove with `pi remove pi-macos-voice`.
 
+**How it installs:** pi `git clone`s the repo into `~/.pi/agent/git/github.com/zenyui/pi-macos-voice`,
+adds it to your settings so it loads every session, and runs `npm install` for
+any dependencies (there are none at runtime). The committed `bin/swyft` and
+`Swyft.app` come down with the clone, and the extension finds them next to
+itself. Because it's a git clone rather than a downloaded archive, macOS doesn't
+quarantine the files, so the ad-hoc-signed app runs without notarization.
+
 ## Permissions
 
 The first time you start voice mode, macOS prompts for **Microphone** and
@@ -132,6 +139,20 @@ pi -e /absolute/path/to/pi-macos-voice/extension/index.ts
 The extension finds its binaries in `bin/` relative to itself, so keep
 `extension/` and `bin/` together. `bin/swyft` and `bin/Swyft.app` are committed
 so a fresh checkout runs without building, on Apple Silicon.
+
+### Commit conventions
+
+This repo uses [Conventional Commits](https://www.conventionalcommits.org).
+Prefix commit subjects with a type, e.g.:
+
+```
+feat: add push-to-talk mode
+fix: stop word not silencing readback
+docs: document install flow
+chore: bump dependencies
+```
+
+Common types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
 
 ## Troubleshooting
 
