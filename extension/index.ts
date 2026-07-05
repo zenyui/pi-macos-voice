@@ -1,6 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { toSpeakable } from "./speakable";
 import {
 	binariesExist,
@@ -13,8 +16,12 @@ import {
 	type SttSession,
 } from "./swyft";
 
-// Version the extension expects to match; kept equal to the repo VERSION file.
-const EXPECTED_VERSION = "0.4.0";
+// Version the extension expects the swyft binary to match. Read from our own
+// package.json (the single source of truth) so it can never drift from the
+// binary, which gen-version stamps from the same file.
+const EXPECTED_VERSION: string = JSON.parse(
+	readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version;
 
 const VOICE_MODE_PROMPT = [
 	"You are in VOICE MODE. Your replies are READ ALOUD, so brevity is critical.",
