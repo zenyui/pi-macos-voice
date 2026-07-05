@@ -1,6 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { toSpeakable } from "./speakable";
 import {
 	binariesExist,
@@ -13,8 +16,12 @@ import {
 	type SttSession,
 } from "./swyft";
 
-// Version the extension expects to match; kept equal to the repo VERSION file.
-const EXPECTED_VERSION = "0.4.0";
+// Version the extension expects the swyft binary to match. Read from our own
+// package.json (the single source of truth) so it can never drift from the
+// binary, which gen-version stamps from the same file.
+const EXPECTED_VERSION: string = JSON.parse(
+	readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf8"),
+).version;
 
 const VOICE_MODE_PROMPT = [
 	"You are in VOICE MODE. Your replies are READ ALOUD, so brevity is critical.",
@@ -81,6 +88,7 @@ export default function (pi: ExtensionAPI) {
 
 	// TTS + speak queue.
 	let speaking: { kill: () => void } | null = null;
+	let speakGen = 0; // guards the post-playback echo-flush timer
 	const speakQueue: string[] = [];
 	// While reading aloud (plus a short tail) the mic hears our own TTS, so we
 	// suppress input except the stop word to avoid a self-talk feedback loop.
@@ -145,6 +153,15 @@ export default function (pi: ExtensionAPI) {
 			if (speaking === s) {
 				speaking = null;
 				suppressInputUntil = Date.now() + TTS_TAIL_MS;
+				// Flush any of our own TTS the mic picked up during playback so it
+				// never finalizes into a spurious message. Wait out the echo tail
+				// first so trailing audio is discarded too.
+				if (speakQueue.length === 0) {
+					const gen = ++speakGen;
+					setTimeout(() => {
+						if (gen === speakGen && !speaking) stt?.reset();
+					}, TTS_TAIL_MS);
+				}
 			}
 			drainSpeak(ctx);
 		});
@@ -156,6 +173,11 @@ export default function (pi: ExtensionAPI) {
 		speaking?.kill();
 		speaking = null;
 		suppressInputUntil = Date.now() + TTS_TAIL_MS;
+		// Flush echo captured during playback, after the tail passes.
+		const gen = ++speakGen;
+		setTimeout(() => {
+			if (gen === speakGen && !speaking) stt?.reset();
+		}, TTS_TAIL_MS);
 	}
 
 	// True while our own TTS is (or just was) playing — mic input is our echo.
