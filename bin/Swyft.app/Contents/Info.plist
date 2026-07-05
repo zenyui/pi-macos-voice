@@ -2,16 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>Pi Voice</string>
 	<key>CFBundleExecutable</key>
 	<string>swyft</string>
 	<key>CFBundleIdentifier</key>
 	<string>works.earendil.swyft</string>
 	<key>CFBundleName</key>
-	<string>swyft</string>
+	<string>Pi Voice</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.4.0</string>
+	<string>0.4.1</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

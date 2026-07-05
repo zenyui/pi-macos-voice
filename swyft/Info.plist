@@ -5,7 +5,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>works.earendil.swyft</string>
 	<key>CFBundleName</key>
-	<string>swyft</string>
+	<string>Pi Voice</string>
+	<key>CFBundleDisplayName</key>
+	<string>Pi Voice</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>swyft uses the microphone to transcribe your speech for the pi coding agent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
