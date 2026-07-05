@@ -56,6 +56,20 @@ private final class Listener {
         }
     }
 
+    // Throw away whatever the recognizer has accumulated and start a fresh
+    // utterance. Called when our own TTS finishes: the mic stays live the whole
+    // time (so a spoken stop word can interrupt), but any audio it picked up
+    // from our speakers is discarded here instead of finalizing into a message.
+    func reset() {
+        generation += 1 // invalidate late callbacks from the task we're tearing down
+        lastText = ""
+        lastUpdate = Date()
+        currentRequest?.endAudio()
+        task?.cancel()
+        newRequest()
+        debugLog("stt reset (echo flushed)")
+    }
+
     func finalizeIfSilent() {
         guard !lastText.isEmpty, Date().timeIntervalSince(lastUpdate) > silence else { return }
         let text = lastText
@@ -128,7 +142,12 @@ func runSTT(_ args: [String]) -> Never {
         jsonSink = { client.writeLine($0) }
         client.readLines(
             onLine: { line in
-                if line == "stop" { exit(0) }
+                switch line {
+                case "stop": exit(0)
+                case "reset":
+                    DispatchQueue.main.async { (listenerRef as? Listener)?.reset() }
+                default: break
+                }
             },
             onClose: { exit(0) }
         )

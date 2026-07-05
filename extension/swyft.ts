@@ -104,6 +104,8 @@ export function chime(style = "bloop"): void {
 
 export interface SttSession {
 	stop: () => void;
+	/** Discard any audio the recognizer accumulated (e.g. our own TTS echo). */
+	reset: () => void;
 }
 
 /** Start STT: open a socket, launch Swyft.app, stream messages to onMessage. */
@@ -176,6 +178,12 @@ export function startStt(
 				conn?.write("stop\n");
 			} catch {}
 			setTimeout(cleanup, 300);
+		},
+		reset: () => {
+			if (stopped) return;
+			try {
+				conn?.write("reset\n");
+			} catch {}
 		},
 	};
 }
