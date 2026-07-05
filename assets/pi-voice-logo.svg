@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 0 1712 800">
+  <style>
+    .logo-mark { fill: #000; }
+    .voice-mark { fill: #0A84FF; }
+    @media (prefers-color-scheme: dark) {
+      .logo-mark { fill: #fff; }
+    }
+  </style>
+
+  <!-- left waveform -->
+  <g class="voice-mark">
+    <rect x="0"   y="310" width="62" height="180"/>
+    <rect x="105" y="250" width="62" height="300"/>
+    <rect x="210" y="180" width="62" height="440"/>
+    <rect x="315" y="250" width="62" height="300"/>
+    <rect x="420" y="310" width="62" height="180"/>
+  </g>
+
+  <!-- pi mark (P + i dot) -->
+  <g class="logo-mark" transform="translate(435,0)">
+    <path fill-rule="evenodd" d="
+      M165.29 165.29
+      H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z
+      M282.65 282.65 V400 H400 V282.65 Z
+    "/>
+    <path d="M517.36 400 H634.72 V634.72 H517.36 Z"/>
+  </g>
+
+  <!-- right waveform -->
+  <g class="voice-mark">
+    <rect x="1190" y="310" width="62" height="180"/>
+    <rect x="1295" y="250" width="62" height="300"/>
+    <rect x="1400" y="180" width="62" height="440"/>
+    <rect x="1505" y="250" width="62" height="300"/>
+    <rect x="1610" y="310" width="62" height="180"/>
+  </g>
+</svg>
