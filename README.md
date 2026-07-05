@@ -145,6 +145,13 @@ Swift constant so the binary's `swyft version` stays in sync.
 - `tts --voice <id> --rate <wpm>` — pick a `say` voice / speed.
 - `hum --volume <0..1> --interval <sec>` — tune the thinking sound.
 
+## Feedback & issues
+
+We track **feature requests and bug reports in [GitHub Issues](https://github.com/zenyui/pi-macos-voice/issues)**.
+Before opening a new one, search existing issues to avoid duplicates. Please
+include your macOS version (`sw_vers`), `swyft version` output, and the relevant
+lines from `/tmp/swyft.log` / `/tmp/swyft-ext.log` when reporting a bug.
+
 ## For contributors
 
 Build from source and load the local checkout:
@@ -205,6 +212,31 @@ instead of assuming a single environment:
   When that API ships, implement `speakNeural(...)` in `TTS.swift` and flip the
   gate — no other call sites change, and older systems keep falling back to
   `av`/`say`.
+
+### macOS Tahoe (26) neural text-to-speech
+
+macOS **Tahoe** (version 26) is expected to ship a new higher-quality on-device
+neural speech-synthesis model. The codebase is already wired for it so that
+turning it on is a localized change, not a refactor:
+
+- **Capability gate** — `neuralTTSAvailable()` in `Platform.swift` is the single
+  `@available(macOS 26, *)` check. It currently returns `false` even on Tahoe
+  (the API isn't implemented yet); flip its inner `return` to `true` once the
+  synthesis API is wired.
+- **Engine ordering** — `TTSEngine` lists `neural` first, so `availableTTSEngines()`
+  puts it at the front and `--engine auto` / `preferredTTSEngine()` will prefer
+  it automatically the moment the gate opens. `resolveTTSEngine("neural")` on an
+  older OS degrades gracefully to `av` → `say`.
+- **Implementation point** — `speakNeural(...)` in `TTS.swift` is a stub that
+  currently delegates to `speakAV(...)`. Replace its body with the real neural
+  API; it already accepts the same `voiceId` / `rate` arguments as the other
+  engines, so the extension and the `--voice` / `--rate` flags need no changes.
+- **Handshake** — `swyft version` reports `os`, `ttsEngines`, and the resolved
+  `ttsEngine`, so the extension sees `neural` show up in the engine list on
+  Tahoe without any client-side version sniffing.
+
+Until then, `--engine neural` resolves to `av` (AVSpeechSynthesizer) on Tahoe and
+`say` on older systems, so nothing breaks while the model is unavailable.
 
 ## Limitations (v0)
 
