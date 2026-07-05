@@ -65,9 +65,11 @@ export function getVersion(): Promise<SwyftVersion> {
  */
 export function speak(
 	text: string,
-	engine?: string,
+	opts: { engine?: string; voiceId?: string } = {},
 ): { done: Promise<void>; kill: () => void } {
-	const args = engine ? ["tts", "--engine", engine] : ["tts"];
+	const args = ["tts"];
+	if (opts.engine) args.push("--engine", opts.engine);
+	if (opts.voiceId) args.push("--voice", opts.voiceId);
 	const child = spawn(SWYFT_BIN, args, { stdio: ["pipe", "ignore", "ignore"] });
 	child.stdin.on("error", () => {});
 	child.stdin.end(text);
@@ -99,6 +101,31 @@ export function speak(
 			} catch {}
 		},
 	};
+}
+
+export interface Voice {
+	id: string;
+	name: string;
+	language: string;
+	quality: "premium" | "enhanced" | "default";
+}
+
+/** List installed TTS voices (parsed from `swyft voices` NDJSON). */
+export function getVoices(): Promise<Voice[]> {
+	return new Promise((resolve, reject) => {
+		execFile(SWYFT_BIN, ["voices"], (err, stdout) => {
+			if (err) return reject(err);
+			const voices: Voice[] = [];
+			for (const line of stdout.split("\n")) {
+				const t = line.trim();
+				if (!t) continue;
+				try {
+					voices.push(JSON.parse(t) as Voice);
+				} catch {}
+			}
+			resolve(voices);
+		});
+	});
 }
 
 /** Play the soft ambient thinking sound until .kill() is called. */

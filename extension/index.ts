@@ -1,20 +1,49 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { toSpeakable } from "./speakable";
 import {
 	binariesExist,
 	chime,
 	getVersion,
+	getVoices,
 	hum,
 	speak,
 	startStt,
 	type SttMessage,
 	type SttSession,
+	type Voice,
 } from "./swyft";
+
+// Persisted voice preference. When set, we pass it to swyft's TTS instead of
+// letting the binary auto-pick (which prefers en-US and ignores the system
+// voice). Lives outside the repo so it survives rebuilds.
+const CONFIG_PATH = join(homedir(), CONFIG_DIR_NAME, "agent", "pivoice.json");
+// Bump when the on-disk shape changes incompatibly; loadVoiceId ignores configs
+// with a newer/unknown version so an old build won't misread a future format.
+const CONFIG_VERSION = 1;
+function loadVoiceId(): string | undefined {
+	try {
+		const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+		if (typeof cfg.version === "number" && cfg.version > CONFIG_VERSION) return undefined;
+		return cfg.voiceId || undefined;
+	} catch {
+		return undefined;
+	}
+}
+function saveVoiceId(voiceId: string | undefined): void {
+	try {
+		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+		writeFileSync(
+			CONFIG_PATH,
+			JSON.stringify({ version: CONFIG_VERSION, voiceId: voiceId ?? null }, null, 2),
+		);
+	} catch {}
+}
 
 // Version the extension expects the swyft binary to match. Read from our own
 // package.json (the single source of truth) so it can never drift from the
@@ -82,6 +111,7 @@ export default function (pi: ExtensionAPI) {
 	let state: VoiceState = "off";
 	let stt: SttSession | null = null;
 	let ready = false; // binary present + version ok
+	let voiceId: string | undefined = loadVoiceId(); // chosen TTS voice, if any
 	let autoSend = false; // false = push-to-send (fill prompt, you press Enter)
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
@@ -147,7 +177,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		if (state !== "speaking") setState("speaking", ctx);
-		const s = speak(next);
+		const s = speak(next, { voiceId });
 		speaking = s;
 		void s.done.then(() => {
 			if (speaking === s) {
@@ -350,6 +380,44 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// Match a free-text name (e.g. "Zoe", "Zoe enhanced", "en-GB premium") to an
+	// installed voice. Prefers higher quality on ties.
+	function matchVoice(query: string, voices: Voice[]): Voice | undefined {
+		const q = query.trim().toLowerCase();
+		if (!q) return undefined;
+		const qual = { premium: 2, enhanced: 1, default: 0 } as const;
+		const byQuality = (a: Voice, b: Voice) => qual[b.quality] - qual[a.quality];
+		const scored = voices
+			.map((v) => {
+				const hay = `${v.name} ${v.language} ${v.quality}`.toLowerCase();
+				const terms = q.split(/\s+/);
+				const hits = terms.filter((t) => hay.includes(t)).length;
+				return { v, hits };
+			})
+			.filter((s) => s.hits > 0)
+			.sort((a, b) => b.hits - a.hits || byQuality(a.v, b.v));
+		return scored[0]?.v;
+	}
+
+	pi.registerCommand("voices", {
+		description: "List installed TTS voices (and the one swyft is using).",
+		handler: async (_args, ctx) => {
+			if (!ready) {
+				ctx.ui.notify("swyft not ready — build the binary first.", "warning");
+				return;
+			}
+			const voices = await getVoices();
+			const en = voices.filter((v) => v.language.startsWith("en"));
+			const lines = (en.length ? en : voices)
+				.sort((a, b) => a.name.localeCompare(b.name))
+				.map((v) => `${v.id === voiceId ? "● " : "  "}${v.name} (${v.language}, ${v.quality})`);
+			const current = voiceId
+				? voices.find((v) => v.id === voiceId)?.name ?? voiceId
+				: "auto (best available)";
+			ctx.ui.notify(`Current voice: ${current}\n${lines.join("\n")}`, "info");
+		},
+	});
+
 	// LLM-callable: lets the agent turn voice mode on/off when the user asks.
 	pi.registerTool({
 		name: "voice_mode",
@@ -380,6 +448,51 @@ export default function (pi: ExtensionAPI) {
 			else if (target && voiceOn()) setState(state, ctx); // refresh status after mode change
 			const label = voiceOn() ? `on (${autoSend ? "auto" : "push"})` : "off";
 			return { content: [{ type: "text", text: `Voice mode ${label}.` }], details: { voiceOn: voiceOn(), autoSend } };
+		},
+	});
+
+	// LLM-callable: change (or reset) the read-aloud voice on request.
+	pi.registerTool({
+		name: "set_voice",
+		label: "Set Voice",
+		description:
+			"Change the voice used for read-aloud (TTS). Pass a voice name like " +
+			"'Zoe', 'Zoe (Enhanced)', or 'en-GB premium'. Pass 'auto' to clear the " +
+			"preference and let the system pick the best available voice. The choice " +
+			"is persisted across sessions.",
+		promptSnippet: "Change the read-aloud (TTS) voice",
+		promptGuidelines: [
+			"Call set_voice when the user asks to change, switch, or reset the " +
+				"speaking/read-aloud voice (e.g. 'use Zoe', 'sound British', 'reset your voice').",
+		],
+		parameters: Type.Object({
+			name: Type.String({ description: "Voice name/language query, or 'auto' to reset." }),
+		}),
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			if (!ready) {
+				return { content: [{ type: "text", text: "swyft not ready — build it first." }], details: {} };
+			}
+			const q = params.name.trim();
+			if (/^(auto|default|reset|system)$/i.test(q)) {
+				voiceId = undefined;
+				saveVoiceId(undefined);
+				return { content: [{ type: "text", text: "Voice reset to auto (best available)." }], details: {} };
+			}
+			const voices = await getVoices();
+			const match = matchVoice(q, voices);
+			if (!match) {
+				const names = [...new Set(voices.filter((v) => v.language.startsWith("en")).map((v) => v.name))];
+				return {
+					content: [{ type: "text", text: `No voice matched "${q}". Installed English voices: ${names.join(", ")}.` }],
+					details: {},
+				};
+			}
+			voiceId = match.id;
+			saveVoiceId(match.id);
+			return {
+				content: [{ type: "text", text: `Voice set to ${match.name} (${match.language}, ${match.quality}).` }],
+				details: { voiceId: match.id },
+			};
 		},
 	});
 }
