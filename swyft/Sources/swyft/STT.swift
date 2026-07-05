@@ -101,7 +101,7 @@ private final class Listener {
 func runSTT(_ args: [String]) -> Never {
     var locale = "en-US"
     var silenceMs = 1200
-    var onDevice = false
+    var onDevice = true
     var socketPath: String?
 
     var i = 0

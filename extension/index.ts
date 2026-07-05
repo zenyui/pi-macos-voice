@@ -14,7 +14,7 @@ import {
 } from "./swyft";
 
 // Version the extension expects to match; kept equal to the repo VERSION file.
-const EXPECTED_VERSION = "0.3.0";
+const EXPECTED_VERSION = "0.4.0";
 
 const VOICE_MODE_PROMPT = [
 	"You are in VOICE MODE. Your replies are READ ALOUD, so brevity is critical.",
