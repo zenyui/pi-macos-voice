@@ -1,3 +1,9 @@
+<p align="center">
+  <a href="https://pi.dev">
+    <img alt="pi voice logo" src="assets/pi-voice-logo.svg" width="340">
+  </a>
+</p>
+
 # pi-macos-voice
 
 Talk to the [pi](https://github.com/earendil-works/pi) coding agent with your
