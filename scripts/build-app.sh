@@ -13,13 +13,18 @@ PLIST="$ROOT/swyft/Info.plist"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp "$BIN" "$APP/Contents/MacOS/swyft"
-chmod +x "$APP/Contents/MacOS/swyft"
+# Name the executable "Pi Voice": TCC titles the permission prompt from the
+# executable filename (the embedded __info_plist makes TCC treat the Mach-O as
+# its own app identity, ignoring the bundle's CFBundleDisplayName), so the
+# on-disk name must be the user-facing name.
+EXEC="Pi Voice"
+cp "$BIN" "$APP/Contents/MacOS/$EXEC"
+chmod +x "$APP/Contents/MacOS/$EXEC"
 
 # Bundle Info.plist needs CFBundleExecutable + a package type on top of the
 # usage strings already in swyft/Info.plist.
 /usr/libexec/PlistBuddy -c "Merge $PLIST" \
-  -c "Add :CFBundleExecutable string swyft" \
+  -c "Add :CFBundleExecutable string $EXEC" \
   -c "Add :CFBundlePackageType string APPL" \
   -c "Add :CFBundleShortVersionString string $(node -p "require('$ROOT/package.json').version")" \
   -c "Add :LSUIElement bool true" \
@@ -27,7 +32,7 @@ chmod +x "$APP/Contents/MacOS/swyft"
     # PlistBuddy can't Merge into a nonexistent file; seed then merge.
     cp "$PLIST" "$APP/Contents/Info.plist"
     /usr/libexec/PlistBuddy \
-      -c "Add :CFBundleExecutable string swyft" \
+      -c "Add :CFBundleExecutable string $EXEC" \
       -c "Add :CFBundlePackageType string APPL" \
       -c "Add :CFBundleShortVersionString string $(node -p "require('$ROOT/package.json').version")" \
       -c "Add :LSUIElement bool true" \
