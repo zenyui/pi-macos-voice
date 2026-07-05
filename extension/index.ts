@@ -23,24 +23,46 @@ import {
 // letting the binary auto-pick (which prefers en-US and ignores the system
 // voice). Lives outside the repo so it survives rebuilds.
 const CONFIG_PATH = join(homedir(), CONFIG_DIR_NAME, "agent", "pivoice.json");
-// Bump when the on-disk shape changes incompatibly; loadVoiceId ignores configs
+// Bump when the on-disk shape changes incompatibly; loadConfig ignores configs
 // with a newer/unknown version so an old build won't misread a future format.
 const CONFIG_VERSION = 1;
-function loadVoiceId(): string | undefined {
+// STT engine: "whisper" (local WhisperKit / Core ML, default) or "apple"
+// (native SFSpeechRecognizer). Persisted so the choice survives restarts.
+type SttEngine = "apple" | "whisper";
+const DEFAULT_WHISPER_MODEL = "base.en";
+interface VoiceConfig {
+	voiceId?: string;
+	sttEngine: SttEngine;
+	whisperModel: string;
+}
+function loadConfig(): VoiceConfig {
 	try {
 		const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
-		if (typeof cfg.version === "number" && cfg.version > CONFIG_VERSION) return undefined;
-		return cfg.voiceId || undefined;
+		if (typeof cfg.version === "number" && cfg.version > CONFIG_VERSION) throw 0;
+		return {
+			voiceId: cfg.voiceId || undefined,
+			sttEngine: cfg.sttEngine === "apple" ? "apple" : "whisper",
+			whisperModel: cfg.whisperModel || DEFAULT_WHISPER_MODEL,
+		};
 	} catch {
-		return undefined;
+		return { voiceId: undefined, sttEngine: "whisper", whisperModel: DEFAULT_WHISPER_MODEL };
 	}
 }
-function saveVoiceId(voiceId: string | undefined): void {
+function saveConfig(cfg: VoiceConfig): void {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
 		writeFileSync(
 			CONFIG_PATH,
-			JSON.stringify({ version: CONFIG_VERSION, voiceId: voiceId ?? null }, null, 2),
+			JSON.stringify(
+				{
+					version: CONFIG_VERSION,
+					voiceId: cfg.voiceId ?? null,
+					sttEngine: cfg.sttEngine,
+					whisperModel: cfg.whisperModel,
+				},
+				null,
+				2,
+			),
 		);
 	} catch {}
 }
@@ -111,7 +133,10 @@ export default function (pi: ExtensionAPI) {
 	let state: VoiceState = "off";
 	let stt: SttSession | null = null;
 	let ready = false; // binary present + version ok
-	let voiceId: string | undefined = loadVoiceId(); // chosen TTS voice, if any
+	const config = loadConfig();
+	let voiceId: string | undefined = config.voiceId; // chosen TTS voice, if any
+	let sttEngine: SttEngine = config.sttEngine; // apple | whisper
+	let whisperModel: string = config.whisperModel;
 	let autoSend = false; // false = push-to-send (fill prompt, you press Enter)
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
@@ -284,6 +309,11 @@ export default function (pi: ExtensionAPI) {
 			case "warn":
 				ctx.ui.notify(`swyft: ${msg.message}`, "warning");
 				break;
+			case "progress":
+				// Model download/compile status (whisper first run). Show it live in
+				// the footer rather than as stacked notifications.
+				ctx.ui.setStatus("swyft", `🎙 ${msg.message}`);
+				break;
 		}
 	}
 
@@ -291,7 +321,19 @@ export default function (pi: ExtensionAPI) {
 		if (!ready || voiceOn()) return;
 		setState("listening", ctx);
 		ctx.ui.setStatus("swyft", "🎙 starting…");
-		stt = startStt((msg) => handleStt(msg, ctx), { silenceMs: 1200 });
+		if (sttEngine === "whisper") {
+			ctx.ui.notify(
+				`Voice STT: whisper (${whisperModel}). First run downloads the model ` +
+					"(~150 MB for base.en) to ~/Library/Caches/pi-macos-voice — one time, " +
+					"then cached. Progress shows in the footer.",
+				"info",
+			);
+		}
+		stt = startStt((msg) => handleStt(msg, ctx), {
+			silenceMs: 1200,
+			engine: sttEngine,
+			model: sttEngine === "whisper" ? whisperModel : undefined,
+		});
 	}
 
 	async function stopVoice(ctx: ExtensionContext) {
@@ -475,7 +517,7 @@ export default function (pi: ExtensionAPI) {
 			const q = params.name.trim();
 			if (/^(auto|default|reset|system)$/i.test(q)) {
 				voiceId = undefined;
-				saveVoiceId(undefined);
+				saveConfig({ voiceId, sttEngine, whisperModel });
 				return { content: [{ type: "text", text: "Voice reset to auto (best available)." }], details: {} };
 			}
 			const voices = await getVoices();
@@ -488,11 +530,36 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 			voiceId = match.id;
-			saveVoiceId(match.id);
+			saveConfig({ voiceId, sttEngine, whisperModel });
 			return {
 				content: [{ type: "text", text: `Voice set to ${match.name} (${match.language}, ${match.quality}).` }],
 				details: { voiceId: match.id },
 			};
+		},
+	});
+
+	// Switch the STT engine (persisted). `whisper` runs locally via WhisperKit;
+	// `apple` uses the native SFSpeechRecognizer. Takes effect next time voice
+	// mode starts. Optional second arg sets the whisper model.
+	pi.registerCommand("voice-engine", {
+		description: "Set the STT engine: apple (native) or whisper (local). Optional: whisper model name.",
+		handler: async (args, ctx) => {
+			const parts = args.trim().split(/\s+/).filter(Boolean);
+			const want = (parts[0] || "").toLowerCase();
+			if (want !== "apple" && want !== "whisper") {
+				ctx.ui.notify(
+					`STT engine: ${sttEngine}${sttEngine === "whisper" ? ` (${whisperModel})` : ""}. ` +
+						"Usage: /voice-engine apple | whisper [model]",
+					"info",
+				);
+				return;
+			}
+			sttEngine = want;
+			if (want === "whisper" && parts[1]) whisperModel = parts[1];
+			saveConfig({ voiceId, sttEngine, whisperModel });
+			const label = want === "whisper" ? `whisper (${whisperModel})` : "apple (native)";
+			const note = voiceOn() ? " Restart voice mode (/voice off, then on) to apply." : "";
+			ctx.ui.notify(`STT engine set to ${label}.${note}`, "info");
 		},
 	});
 }
