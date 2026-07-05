@@ -9,8 +9,8 @@
 	<key>CFBundleDisplayName</key>
 	<string>Pi Voice</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>swyft uses the microphone to transcribe your speech for the pi coding agent.</string>
+	<string>Pi Voice uses the microphone to transcribe your speech for the pi coding agent.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>swyft uses speech recognition to turn your dictation into text for the pi coding agent.</string>
+	<string>Pi Voice uses speech recognition to turn your dictation into text for the pi coding agent.</string>
 </dict>
 </plist>
