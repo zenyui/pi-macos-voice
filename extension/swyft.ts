@@ -26,6 +26,12 @@ export interface SwyftVersion {
 	version: string;
 	protocol: number;
 	capabilities: string[];
+	/** Running macOS version, e.g. "15.7.4" (added in later builds). */
+	os?: string;
+	/** TTS engines available on this OS, best-first, e.g. ["av","say"]. */
+	ttsEngines?: string[];
+	/** Engine `--engine auto` resolves to on this OS. */
+	ttsEngine?: string;
 }
 
 export type SttMessage =
@@ -52,9 +58,17 @@ export function getVersion(): Promise<SwyftVersion> {
 	});
 }
 
-/** Speak text aloud. Returns a handle whose .kill() supports barge-in. */
-export function speak(text: string): { done: Promise<void>; kill: () => void } {
-	const child = spawn(SWYFT_BIN, ["tts"], { stdio: ["pipe", "ignore", "ignore"] });
+/**
+ * Speak text aloud. Returns a handle whose .kill() supports barge-in.
+ * `engine` defaults to swyft's own `auto` (best available for the macOS
+ * version); pass "av" | "say" | "neural" to force one.
+ */
+export function speak(
+	text: string,
+	engine?: string,
+): { done: Promise<void>; kill: () => void } {
+	const args = engine ? ["tts", "--engine", engine] : ["tts"];
+	const child = spawn(SWYFT_BIN, args, { stdio: ["pipe", "ignore", "ignore"] });
 	child.stdin.on("error", () => {});
 	child.stdin.end(text);
 	// Resolve on the FIRST of exit/close/error so `speaking` can never get stuck

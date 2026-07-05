@@ -138,6 +138,10 @@ Swift constant so the binary's `swyft version` stays in sync.
 - `stt --silence-ms <n>` — pause length that commits a phrase (default 1200).
 - `stt --locale <id>` — recognizer locale (default `en-US`).
 - `stt --on-device` — force on-device recognition.
+- `tts --engine <name>` — `auto` (default) | `neural` | `av` | `say`. `auto`
+  picks the best engine available for your macOS version; older systems fall
+  back automatically. `swyft version` reports `os`, `ttsEngines`, and the
+  resolved `ttsEngine`.
 - `tts --voice <id> --rate <wpm>` — pick a `say` voice / speed.
 - `hum --volume <0..1> --interval <sec>` — tune the thinking sound.
 
@@ -188,9 +192,25 @@ Common types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
 - **Version mismatch warning:** rebuild (`npm run build`) so binary and
   extension versions match.
 
+## macOS version support
+
+Capabilities are resolved at runtime from the OS version in one place
+(`swyft/Sources/swyft/Platform.swift`), so `swyft` adapts across macOS releases
+instead of assuming a single environment:
+
+- `availableTTSEngines()` / `preferredTTSEngine()` decide what `--engine auto`
+  uses; the extension and `swyft version` read the same source.
+- A `neural` TTS slot is reserved (gated behind `neuralTTSAvailable()`, an
+  `@available(macOS 26, *)` check) for the next macOS on-device speech model.
+  When that API ships, implement `speakNeural(...)` in `TTS.swift` and flip the
+  gate — no other call sites change, and older systems keep falling back to
+  `av`/`say`.
+
 ## Limitations (v0)
 
 - Apple Silicon only in the committed binary.
+- The `neural` TTS engine is a reserved stub — it currently falls back to
+  AVSpeechSynthesizer until the new macOS synthesis API is wired up.
 - No acoustic echo cancellation: while speaking, only stop words are heard
   (prevents a self-talk feedback loop). Full barge-in would need AEC.
 - TTS uses `say`; the higher-quality `AVSpeechSynthesizer` crashes from a CLI
