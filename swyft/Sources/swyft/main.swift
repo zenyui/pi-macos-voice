@@ -53,12 +53,15 @@ case "version":
         "name": "swyft",
         "version": swyftVersion,
         "protocol": swyftProtocol,
-        "capabilities": ["version", "tts", "stt", "doctor", "hum", "chime"],
+        "capabilities": ["version", "tts", "voices", "stt", "doctor", "hum", "chime"],
     ])
     exit(0)
 
 case "tts":
     runTTS(rest)
+
+case "voices":
+    runVoices()
 
 case "stt":
     runSTT(rest)
@@ -78,8 +81,10 @@ case "help", "-h", "--help":
     usage: swyft <command> [options]
       version                 print version/protocol/capabilities as JSON
       tts [text]              text-to-speech: read <text> (or stdin) aloud; blocks until done
-        --voice <id>          voice identifier (default: system)
-        --rate <wpm>          words per minute (default: system)
+        --engine <av|say>     av = AVSpeechSynthesizer (default), say = /usr/bin/say
+        --voice <id>          voice identifier (default: system en-US)
+        --rate <n>            av: 0..1 (default ~0.5); say: words per minute
+      voices                  list installed TTS voices as NDJSON
       stt                     speech-to-text: stream recognized speech as NDJSON
         --socket <path>       connect to a unix socket for NDJSON + control (else stdout)
         --locale <id>         recognizer locale (default: en-US)

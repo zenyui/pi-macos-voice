@@ -14,7 +14,7 @@ import {
 } from "./swyft";
 
 // Version the extension expects to match; kept equal to the repo VERSION file.
-const EXPECTED_VERSION = "0.2.0";
+const EXPECTED_VERSION = "0.3.0";
 
 const VOICE_MODE_PROMPT = [
 	"You are in VOICE MODE. Your replies are READ ALOUD, so brevity is critical.",
@@ -194,20 +194,23 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.setWidget("swyft", []);
 				const text = msg.text.trim();
 				if (!text) break;
+				// Unmute is always allowed (even while muted), final-only.
 				if (micMuted) {
 					if (isUnmuteWord(text)) setMicMuted(false, ctx);
 					break; // muted: ignore everything except "unmute"
 				}
-				if (isMuteWord(text)) {
-					setMicMuted(true, ctx);
-					break;
-				}
 				const muted = inputMuted();
+				// Stop/barge-in works even during our own speech (loose match).
 				if (muted ? containsStopWord(text) : isStopWord(text)) {
 					handleStop(ctx);
 					break;
 				}
-				if (muted) break; // drop self-echo transcript
+				if (muted) break; // our own TTS echo — never mute or send from it
+				// Real user speech from here on.
+				if (isMuteWord(text)) {
+					setMicMuted(true, ctx);
+					break;
+				}
 				if (autoSend) {
 					pi.sendUserMessage(`${MIC_PREFIX}${text}`);
 				} else {
