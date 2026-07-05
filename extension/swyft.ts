@@ -55,9 +55,36 @@ export function getVersion(): Promise<SwyftVersion> {
 /** Speak text aloud. Returns a handle whose .kill() supports barge-in. */
 export function speak(text: string): { done: Promise<void>; kill: () => void } {
 	const child = spawn(SWYFT_BIN, ["tts"], { stdio: ["pipe", "ignore", "ignore"] });
+	child.stdin.on("error", () => {});
 	child.stdin.end(text);
-	const done = new Promise<void>((resolve) => child.on("close", () => resolve()));
-	return { done, kill: () => child.kill("SIGTERM") };
+	// Resolve on the FIRST of exit/close/error so `speaking` can never get stuck
+	// (a stuck handle would deadlock all further input). Safety timer too.
+	const done = new Promise<void>((resolve) => {
+		let settled = false;
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			resolve();
+		};
+		const timer = setTimeout(() => {
+			try {
+				child.kill("SIGKILL");
+			} catch {}
+			finish();
+		}, 120_000);
+		child.on("exit", finish);
+		child.on("close", finish);
+		child.on("error", finish);
+	});
+	return {
+		done,
+		kill: () => {
+			try {
+				child.kill("SIGTERM");
+			} catch {}
+		},
+	};
 }
 
 /** Play the soft ambient thinking sound until .kill() is called. */
