@@ -1,6 +1,6 @@
 {
   "name": "pi-macos-voice",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Native macOS dictation + text-to-speech bridge for the pi coding agent.",
   "type": "module",
   "pi": {
