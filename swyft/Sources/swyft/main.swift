@@ -91,9 +91,12 @@ case "help", "-h", "--help":
       voices                  list installed TTS voices as NDJSON
       stt                     speech-to-text: stream recognized speech as NDJSON
         --socket <path>       connect to a unix socket for NDJSON + control (else stdout)
-        --locale <id>         recognizer locale (default: en-US)
+        --engine <name>       apple (default, SFSpeechRecognizer) | whisper (WhisperKit)
+        --locale <id>         recognizer locale (default: en-US; apple only)
         --silence-ms <n>      commit-on-silence threshold (default: 1200)
-        --on-device           force on-device recognition
+        --on-device           force on-device recognition (apple only)
+        --model <name>        whisper model: tiny.en|base.en|small.en|large-v3-turbo (default: base.en)
+        --vad-threshold <n>   whisper voice-activity energy threshold 0..1 (default: 0.3)
       hum                     play a soft ambient thinking sound until killed
         --volume <0..1>       loudness (default: 0.05)
       chime                   play a short "listening" earcon and exit

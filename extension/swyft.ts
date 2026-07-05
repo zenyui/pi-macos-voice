@@ -39,7 +39,9 @@ export type SttMessage =
 	| { type: "partial"; text: string }
 	| { type: "final"; text: string }
 	| { type: "permission"; mic: string; speech: string }
-	| { type: "warn"; message: string };
+	| { type: "warn"; message: string }
+	/** Model download / load progress (whisper first run). */
+	| { type: "progress"; message: string };
 
 export function binariesExist(): boolean {
 	return existsSync(SWYFT_BIN) && existsSync(SWYFT_APP);
@@ -152,7 +154,15 @@ export interface SttSession {
 /** Start STT: open a socket, launch Swyft.app, stream messages to onMessage. */
 export function startStt(
 	onMessage: (msg: SttMessage) => void,
-	opts: { silenceMs?: number; locale?: string; onDevice?: boolean } = {},
+	opts: {
+		silenceMs?: number;
+		locale?: string;
+		onDevice?: boolean;
+		/** STT engine: "apple" (SFSpeechRecognizer) or "whisper" (WhisperKit). */
+		engine?: string;
+		/** whisper only: model name (tiny.en, base.en, small.en, large-v3-turbo, …). */
+		model?: string;
+	} = {},
 ): SttSession {
 	const dir = join(tmpdir(), "swyft");
 	mkdirSync(dir, { recursive: true });
@@ -202,6 +212,8 @@ export function startStt(
 		if (opts.silenceMs) args.push("--silence-ms", String(opts.silenceMs));
 		if (opts.locale) args.push("--locale", opts.locale);
 		if (opts.onDevice) args.push("--on-device");
+		if (opts.engine) args.push("--engine", opts.engine);
+		if (opts.model) args.push("--model", opts.model);
 		log(`listening on ${sockPath}; launching: open ${args.join(" ")}`);
 		const child: ChildProcess = spawn("open", args, { stdio: "ignore" });
 		child.on("error", (e) => {

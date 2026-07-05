@@ -1,10 +1,19 @@
 import AVFoundation
 import Speech
 
-// Keeps the listener alive past the permission callback (main-queue dispatch).
-private var listenerRef: AnyObject?
+// Shared contract every STT engine fulfills: capture audio and emit the same
+// NDJSON protocol (ready/partial/final/permission/warn). `main.swift`/the
+// extension are engine-agnostic — they only consume those messages.
+protocol STTListener: AnyObject {
+    func start()
+    /// Discard whatever audio the engine accumulated (e.g. our own TTS echo).
+    func reset()
+}
 
-private final class Listener {
+// Keeps the listener alive past the permission callback (main-queue dispatch).
+var listenerRef: STTListener?
+
+private final class Listener: STTListener {
     let engine = AVAudioEngine()
     let recognizer: SFSpeechRecognizer
     let silence: TimeInterval
@@ -117,6 +126,9 @@ func runSTT(_ args: [String]) -> Never {
     var silenceMs = 1200
     var onDevice = true
     var socketPath: String?
+    var engine = "apple"        // apple (SFSpeechRecognizer) | whisper (WhisperKit)
+    var model = "base.en"       // whisper only: model name (tiny.en, base.en, small.en, large-v3-turbo, ...)
+    var vadThreshold: Float = 0.3 // whisper only: relative-energy voice threshold
 
     var i = 0
     while i < args.count {
@@ -125,6 +137,9 @@ func runSTT(_ args: [String]) -> Never {
         case "--locale": i += 1; if i < args.count { locale = args[i] }
         case "--silence-ms": i += 1; if i < args.count { silenceMs = Int(args[i]) ?? silenceMs }
         case "--on-device": onDevice = true
+        case "--engine": i += 1; if i < args.count { engine = args[i] }
+        case "--model": i += 1; if i < args.count { model = args[i] }
+        case "--vad-threshold": i += 1; if i < args.count { vadThreshold = Float(args[i]) ?? vadThreshold }
         default: break
         }
         i += 1
@@ -132,7 +147,7 @@ func runSTT(_ args: [String]) -> Never {
 
     // In socket mode, route NDJSON to the extension's socket and take control
     // lines back ("stop" ends the session; EOF means the extension went away).
-    debugLog("stt starting: socket=\(socketPath ?? "(stdout)") locale=\(locale) silenceMs=\(silenceMs) onDevice=\(onDevice)")
+    debugLog("stt starting: socket=\(socketPath ?? "(stdout)") engine=\(engine) locale=\(locale) model=\(model) silenceMs=\(silenceMs) onDevice=\(onDevice)")
     if let socketPath {
         guard let client = UnixSocketClient(path: socketPath) else {
             debugLog("could not connect to socket \(socketPath)")
@@ -145,7 +160,7 @@ func runSTT(_ args: [String]) -> Never {
                 switch line {
                 case "stop": exit(0)
                 case "reset":
-                    DispatchQueue.main.async { (listenerRef as? Listener)?.reset() }
+                    DispatchQueue.main.async { listenerRef?.reset() }
                 default: break
                 }
             },
@@ -153,18 +168,41 @@ func runSTT(_ args: [String]) -> Never {
         )
     }
 
-    requestMic { mic in
-        requestSpeech { speech in
-            debugLog("permissions: mic=\(mic) speech=\(speech)")
-            if mic != "authorized" || speech != "authorized" {
-                emit(["type": "permission", "mic": mic, "speech": speech])
+    // Engine + Timer must run on the main run loop.
+    func startListener() {
+        DispatchQueue.main.async {
+            let listener: STTListener
+            switch engine {
+            case "whisper":
+                listener = WhisperListener(model: model, silenceMs: silenceMs, vadThreshold: vadThreshold)
+            default:
+                listener = Listener(locale: locale, silenceMs: silenceMs, onDevice: onDevice)
+            }
+            listenerRef = listener
+            listener.start()
+        }
+    }
+
+    if engine == "whisper" {
+        // WhisperKit is fully on-device and needs only the mic — no Speech
+        // Recognition authorization.
+        requestMic { mic in
+            debugLog("permissions: mic=\(mic) (whisper)")
+            if mic != "authorized" {
+                emit(["type": "permission", "mic": mic, "speech": "not-required"])
                 exit(1)
             }
-            // Engine + Timer must run on the main run loop.
-            DispatchQueue.main.async {
-                let listener = Listener(locale: locale, silenceMs: silenceMs, onDevice: onDevice)
-                listenerRef = listener
-                listener.start()
+            startListener()
+        }
+    } else {
+        requestMic { mic in
+            requestSpeech { speech in
+                debugLog("permissions: mic=\(mic) speech=\(speech)")
+                if mic != "authorized" || speech != "authorized" {
+                    emit(["type": "permission", "mic": mic, "speech": speech])
+                    exit(1)
+                }
+                startListener()
             }
         }
     }

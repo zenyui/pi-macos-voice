@@ -7,11 +7,14 @@
 # pi-macos-voice
 
 Talk to the [pi](https://github.com/earendil-works/pi) coding agent with your
-voice, and have its replies read back to you — using native macOS speech, fully
-on-device.
+voice, and have its replies read back to you — fully on-device.
 
-- **Dictation (STT):** speak and your words become prompts.
-- **Read-aloud (TTS):** the agent's replies are spoken back.
+- **Dictation (STT):** speak and your words become prompts. Pick your engine —
+  native macOS `SFSpeechRecognizer` or local [Whisper](https://github.com/argmaxinc/WhisperKit)
+  (OpenAI's model on Core ML / the Neural Engine).
+- **Read-aloud (TTS):** the agent's replies are spoken back via native macOS voices.
+- **Pluggable engines:** STT and TTS both sit behind a common protocol, so
+  swapping providers is a one-line change (`/voice-engine apple|whisper`).
 - **Interrupt anytime:** say "stop" (or "shut up") to cut off a reply.
 - **Mute/unmute:** say "mute" to pause listening, "unmute" to resume.
 - **Thinking sound:** a soft ambient tone plays while the agent works.
@@ -117,6 +120,7 @@ keep replies short and speakable.
 │  (STT)    │◀──"stop" control─│  (state machine + queue) │            │  tts   │──▶ say
 └───────────┘                  └──────────────────────────┘            └────────┘
   mic → SFSpeechRecognizer          pi events (agent_start/end, …)      AVAudioEngine hum
+     or WhisperKit (Core ML)
 ```
 
 - **`swyft`** (Swift, `swyft/`) — one binary, several subcommands:
@@ -137,13 +141,35 @@ keep replies short and speakable.
 Versions are single-sourced from `package.json`; `npm run build` regenerates the
 Swift constant so the binary's `swyft version` stays in sync.
 
+## STT engines
+
+Dictation has two interchangeable back-ends, both fully on-device. They emit
+the same NDJSON protocol, so the extension and its state machine are identical
+for both:
+
+- **`apple`** (default) — native `SFSpeechRecognizer`. Zero setup, streaming
+  partials, needs Speech Recognition permission.
+- **`whisper`** — local [WhisperKit](https://github.com/argmaxinc/WhisperKit)
+  (OpenAI Whisper on Core ML / the Neural Engine). Needs only the mic. The
+  model downloads on first use (`base.en` ≈ small; cached under
+  `~/Library/Caches/pi-macos-voice`). Better accuracy on accents/jargon; warm
+  transcription is sub-second on Apple Silicon.
+
+Switch with **`/voice-engine apple`** or **`/voice-engine whisper [model]`**
+(persisted). Models: `tiny.en`, `base.en`, `small.en`, `large-v3-turbo`, … —
+smaller is faster, larger is more accurate. Restart voice mode to apply.
+
 ## Configuration
 
 `swyft` subcommands accept flags the extension can pass through:
 
 - `stt --silence-ms <n>` — pause length that commits a phrase (default 1200).
 - `stt --locale <id>` — recognizer locale (default `en-US`).
-- `stt --on-device` — force on-device recognition.
+- `stt --on-device` — force on-device recognition (apple engine).
+- `stt --engine <apple|whisper>` — pick the STT back-end (default `apple`).
+- `stt --model <name>` — whisper model (default `base.en`).
+- `stt --vad-threshold <0..1>` — whisper voice-activity energy threshold
+  (default 0.3; lower = more sensitive).
 - `tts --engine <name>` — `auto` (default) | `neural` | `av` | `say`. `auto`
   picks the best engine available for your macOS version; older systems fall
   back automatically. `swyft version` reports `os`, `ttsEngines`, and the
