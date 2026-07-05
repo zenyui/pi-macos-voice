@@ -85,6 +85,21 @@ private final class Listener {
 
     func start() {
         let input = engine.inputNode
+        // Enable Apple's voice processing on the input node: acoustic echo
+        // cancellation + noise suppression, the same stack FaceTime uses. The
+        // VP I/O unit uses the hardware output as its echo reference, so it
+        // subtracts our own TTS playback from the mic signal — the recognizer
+        // stops hearing the agent's voice. This is what makes full barge-in
+        // (talking over a reply) possible without muting the mic. Built into
+        // macOS, no extra cost. Best-effort: if it can't enable, we fall back
+        // to the previous behavior (mic hears everything; the extension's
+        // suppress-except-stop-word logic still prevents self-talk loops).
+        do {
+            try input.setVoiceProcessingEnabled(true)
+            debugLog("voice processing (AEC) enabled")
+        } catch {
+            debugLog("could not enable voice processing: \(error.localizedDescription)")
+        }
         let format = input.outputFormat(forBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.currentRequest?.append(buffer)
