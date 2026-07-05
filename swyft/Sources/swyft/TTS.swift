@@ -1,9 +1,11 @@
 import AVFoundation
 
-// Text-to-speech. Two engines:
-//   --engine av  (default) AVSpeechSynthesizer — higher-quality system voices,
-//                 in-process so a kill stops audio instantly (clean barge-in).
-//   --engine say           shell out to /usr/bin/say (fallback).
+// Text-to-speech. Engines (see Platform.swift for availability/selection):
+//   --engine auto (default) pick the best available for this macOS version.
+//   --engine neural         new on-device neural model (macOS 26+; not yet wired).
+//   --engine av             AVSpeechSynthesizer — in-process system voices,
+//                           killable so a kill stops audio instantly (barge-in).
+//   --engine say            shell out to /usr/bin/say (always-present fallback).
 // Reads text from args or stdin; blocks until playback ends.
 
 private final class AVDelegate: NSObject, AVSpeechSynthesizerDelegate {
@@ -117,8 +119,19 @@ func runVoices() -> Never {
     exit(0)
 }
 
+// Placeholder for the next-macOS neural synthesizer. Kept here so the wiring
+// (engine selection, availability gate, extension flag) is already in place;
+// only this body needs filling in when the API ships. Until then it should
+// never be reached — resolveTTSEngine() won't return .neural while
+// neuralTTSAvailable() is false — but guard anyway.
+private func speakNeural(_ text: String, voiceId: String?, rate: Float?) -> Never {
+    // TODO: implement using the new on-device speech synthesis API.
+    debugLog("neural TTS not implemented; falling back to AVSpeechSynthesizer")
+    speakAV(text, voiceId: voiceId, rate: rate)
+}
+
 func runTTS(_ args: [String]) -> Never {
-    var engine = "av"
+    var engine = "auto"
     var voiceId: String?
     var rateArg: String?
     var words: [String] = []
@@ -142,9 +155,12 @@ func runTTS(_ args: [String]) -> Never {
     text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     if text.isEmpty { exit(0) }
 
-    if engine == "say" {
+    switch resolveTTSEngine(engine) {
+    case .say:
         speakSay(text, voiceId: voiceId, rate: rateArg.flatMap { Int($0) })
-    } else {
+    case .neural:
+        speakNeural(text, voiceId: voiceId, rate: rateArg.flatMap { Float($0) })
+    case .av:
         speakAV(text, voiceId: voiceId, rate: rateArg.flatMap { Float($0) })
     }
 }

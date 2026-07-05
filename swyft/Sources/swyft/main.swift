@@ -54,6 +54,9 @@ case "version":
         "version": swyftVersion,
         "protocol": swyftProtocol,
         "capabilities": ["version", "tts", "voices", "stt", "doctor", "hum", "chime"],
+        "os": OSVersion.current.string,
+        "ttsEngines": availableTTSEngines().map { $0.rawValue },
+        "ttsEngine": preferredTTSEngine().rawValue,
     ])
     exit(0)
 
@@ -81,7 +84,8 @@ case "help", "-h", "--help":
     usage: swyft <command> [options]
       version                 print version/protocol/capabilities as JSON
       tts [text]              text-to-speech: read <text> (or stdin) aloud; blocks until done
-        --engine <av|say>     av = AVSpeechSynthesizer (default), say = /usr/bin/say
+        --engine <name>       auto (default) | neural | av | say; auto picks the
+                              best available for this macOS version
         --voice <id>          voice identifier (default: system en-US)
         --rate <n>            av: 0..1 (default ~0.5); say: words per minute
       voices                  list installed TTS voices as NDJSON
