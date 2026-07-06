@@ -448,6 +448,19 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// Toggle mic mute without leaving voice mode (same effect as saying
+	// "mute"/"unmute"). No-op unless voice mode is on.
+	pi.registerCommand("mute", {
+		description: "Mute/unmute voice dictation without leaving voice mode.",
+		handler: async (_args, ctx) => {
+			if (!voiceOn()) {
+				ctx.ui.notify("Voice mode is off — run /voice first.", "info");
+				return;
+			}
+			setMicMuted(!micMuted, ctx);
+		},
+	});
+
 	// LLM-callable: lets the agent turn voice mode on/off when the user asks.
 	pi.registerTool({
 		name: "voice_mode",
