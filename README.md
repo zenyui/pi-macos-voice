@@ -47,9 +47,9 @@ To pin a version: `pi install npm:picrophone@0.8.1`. Remove with
 ### macOS (supported)
 
 - **Apple Silicon or Intel** — universal binary (arm64 + x86_64), **macOS 13+**.
-- **Dictation:** `apple` (native `SFSpeechRecognizer`, default) or `whisper`
-  (local [WhisperKit](https://github.com/argmaxinc/WhisperKit); models
-  `tiny.en` → `large-v3-turbo`).
+- **Dictation:** `whisper` (local [WhisperKit](https://github.com/argmaxinc/WhisperKit),
+  default; models `tiny.en` → `large-v3-turbo`) or `apple` (native
+  `SFSpeechRecognizer`).
 - **Read-aloud:** `av` (`AVSpeechSynthesizer`, default), `say`, or `qwen`
   (on-device Qwen3-TTS).
 

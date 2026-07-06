@@ -10,8 +10,8 @@ restart voice mode to apply).
 
 | Engine | Notes |
 | --- | --- |
-| **`apple`** (default) | Native `SFSpeechRecognizer`. Zero setup, streaming partials, needs Speech Recognition permission. |
-| **`whisper`** | Local [WhisperKit](https://github.com/argmaxinc/WhisperKit) (OpenAI Whisper on Core ML / the Neural Engine). Needs only the mic. Better accuracy on accents/jargon; warm transcription is sub-second on Apple Silicon. |
+| **`whisper`** (default) | Local [WhisperKit](https://github.com/argmaxinc/WhisperKit) — Whisper on the Neural Engine. Mic-only, accurate on accents/jargon, sub-second when warm. |
+| **`apple`** | Native `SFSpeechRecognizer`. Zero setup, streaming partials, needs Speech Recognition permission. |
 
 **Whisper models** (download on first use, cached under
 `~/Library/Caches/picrophone`) — smaller is faster, larger is more accurate:
@@ -24,10 +24,10 @@ immediately).
 
 | Engine | Notes |
 | --- | --- |
-| **`av`** (default) | `AVSpeechSynthesizer` with the best installed English voice (add enhanced/premium voices in System Settings › Accessibility › Spoken Content). Snappy, killable mid-utterance for clean barge-in. |
+| **`av`** (default) | `AVSpeechSynthesizer` using your System Settings voice. Snappy, killable mid-utterance for clean barge-in. |
 | **`say`** | `/usr/bin/say`, the always-present fallback. |
-| **`qwen`** | On-device Qwen3-TTS via WhisperKit's `TTSKit` (Core ML / the Neural Engine). Higher quality but slow to synthesize — not the default. Model downloads on first use (cached under `~/Library/Caches/picrophone`). |
-| **`auto`** | Picks the best engine available for your macOS version; older systems fall back automatically. |
+| **`qwen`** | On-device Qwen3-TTS via WhisperKit's `TTSKit`. Higher quality but slow to synthesize. Model downloads on first use. |
+| **`auto`** | Picks the best engine for your macOS version. |
 
 **Qwen speakers** — pass as a second arg, e.g. `/voice-tts qwen aiden`:
 `ryan`, `aiden`, `serena`, `vivian`, `eric`, `dylan`, `sohee`, `ono-anna`,
