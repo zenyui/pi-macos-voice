@@ -10,18 +10,16 @@ import {
 	binariesExist,
 	chime,
 	getVersion,
-	getVoices,
 	hum,
 	speak,
 	startStt,
 	type SttMessage,
 	type SttSession,
-	type Voice,
 } from "./swyft";
 
-// Persisted voice preference. When set, we pass it to swyft's TTS instead of
-// letting the binary auto-pick (which prefers en-US and ignores the system
-// voice). Lives outside the repo so it survives rebuilds.
+// Persisted engine preferences (STT + TTS). Each TTS provider has its own
+// built-in default voice; there is no per-voice picker. Lives outside the repo
+// so it survives rebuilds.
 const CONFIG_PATH = join(homedir(), CONFIG_DIR_NAME, "agent", "pivoice.json");
 // Bump when the on-disk shape changes incompatibly; loadConfig ignores configs
 // with a newer/unknown version so an old build won't misread a future format.
@@ -29,23 +27,39 @@ const CONFIG_VERSION = 1;
 // STT engine: "whisper" (local WhisperKit / Core ML, default) or "apple"
 // (native SFSpeechRecognizer). Persisted so the choice survives restarts.
 type SttEngine = "apple" | "whisper";
+// Read-aloud engine: "auto" (system default, best of av/say), or an explicit
+// backend. "qwen" runs on-device Qwen3-TTS via WhisperKit's TTSKit.
+type TtsEngine = "auto" | "av" | "say" | "qwen";
 const DEFAULT_WHISPER_MODEL = "base.en";
+const DEFAULT_QWEN_VOICE = "aiden";
 interface VoiceConfig {
-	voiceId?: string;
 	sttEngine: SttEngine;
 	whisperModel: string;
+	ttsEngine: TtsEngine;
+	// Qwen3 speaker id (e.g. ryan, serena) used when ttsEngine === "qwen".
+	qwenVoice: string;
 }
 function loadConfig(): VoiceConfig {
 	try {
 		const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 		if (typeof cfg.version === "number" && cfg.version > CONFIG_VERSION) throw 0;
+		const tts: TtsEngine =
+			cfg.ttsEngine === "av" || cfg.ttsEngine === "say" || cfg.ttsEngine === "qwen"
+				? cfg.ttsEngine
+				: "av";
 		return {
-			voiceId: cfg.voiceId || undefined,
 			sttEngine: cfg.sttEngine === "apple" ? "apple" : "whisper",
 			whisperModel: cfg.whisperModel || DEFAULT_WHISPER_MODEL,
+			ttsEngine: tts,
+			qwenVoice: cfg.qwenVoice || DEFAULT_QWEN_VOICE,
 		};
 	} catch {
-		return { voiceId: undefined, sttEngine: "whisper", whisperModel: DEFAULT_WHISPER_MODEL };
+		return {
+			sttEngine: "whisper",
+			whisperModel: DEFAULT_WHISPER_MODEL,
+			ttsEngine: "av",
+			qwenVoice: DEFAULT_QWEN_VOICE,
+		};
 	}
 }
 function saveConfig(cfg: VoiceConfig): void {
@@ -56,9 +70,10 @@ function saveConfig(cfg: VoiceConfig): void {
 			JSON.stringify(
 				{
 					version: CONFIG_VERSION,
-					voiceId: cfg.voiceId ?? null,
 					sttEngine: cfg.sttEngine,
 					whisperModel: cfg.whisperModel,
+					ttsEngine: cfg.ttsEngine,
+					qwenVoice: cfg.qwenVoice,
 				},
 				null,
 				2,
@@ -134,9 +149,11 @@ export default function (pi: ExtensionAPI) {
 	let stt: SttSession | null = null;
 	let ready = false; // binary present + version ok
 	const config = loadConfig();
-	let voiceId: string | undefined = config.voiceId; // chosen TTS voice, if any
 	let sttEngine: SttEngine = config.sttEngine; // apple | whisper
 	let whisperModel: string = config.whisperModel;
+	let ttsEngine: TtsEngine = config.ttsEngine; // auto | av | say | qwen
+	let qwenVoice: string = config.qwenVoice; // Qwen3 speaker id
+	const persist = () => saveConfig({ sttEngine, whisperModel, ttsEngine, qwenVoice });
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
 
@@ -201,7 +218,12 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		if (state !== "speaking") setState("speaking", ctx);
-		const s = speak(next, { voiceId });
+		// For Qwen, --voice selects a Qwen3 speaker; the system engines (av/say)
+		// use their own built-in default voice.
+		const s =
+			ttsEngine === "qwen"
+				? speak(next, { engine: "qwen", voiceId: qwenVoice })
+				: speak(next, { engine: ttsEngine === "auto" ? undefined : ttsEngine });
 		speaking = s;
 		void s.done.then(() => {
 			if (speaking === s) {
@@ -405,44 +427,6 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Match a free-text name (e.g. "Zoe", "Zoe enhanced", "en-GB premium") to an
-	// installed voice. Prefers higher quality on ties.
-	function matchVoice(query: string, voices: Voice[]): Voice | undefined {
-		const q = query.trim().toLowerCase();
-		if (!q) return undefined;
-		const qual = { premium: 2, enhanced: 1, default: 0 } as const;
-		const byQuality = (a: Voice, b: Voice) => qual[b.quality] - qual[a.quality];
-		const scored = voices
-			.map((v) => {
-				const hay = `${v.name} ${v.language} ${v.quality}`.toLowerCase();
-				const terms = q.split(/\s+/);
-				const hits = terms.filter((t) => hay.includes(t)).length;
-				return { v, hits };
-			})
-			.filter((s) => s.hits > 0)
-			.sort((a, b) => b.hits - a.hits || byQuality(a.v, b.v));
-		return scored[0]?.v;
-	}
-
-	pi.registerCommand("voices", {
-		description: "List installed TTS voices (and the one swyft is using).",
-		handler: async (_args, ctx) => {
-			if (!ready) {
-				ctx.ui.notify("swyft not ready — build the binary first.", "warning");
-				return;
-			}
-			const voices = await getVoices();
-			const en = voices.filter((v) => v.language.startsWith("en"));
-			const lines = (en.length ? en : voices)
-				.sort((a, b) => a.name.localeCompare(b.name))
-				.map((v) => `${v.id === voiceId ? "● " : "  "}${v.name} (${v.language}, ${v.quality})`);
-			const current = voiceId
-				? voices.find((v) => v.id === voiceId)?.name ?? voiceId
-				: "auto (best available)";
-			ctx.ui.notify(`Current voice: ${current}\n${lines.join("\n")}`, "info");
-		},
-	});
-
 	// LLM-callable: lets the agent turn voice mode on/off when the user asks.
 	pi.registerTool({
 		name: "voice_mode",
@@ -472,55 +456,10 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// LLM-callable: change (or reset) the read-aloud voice on request.
-	pi.registerTool({
-		name: "set_voice",
-		label: "Set Voice",
-		description:
-			"Change the voice used for read-aloud (TTS). Pass a voice name like " +
-			"'Zoe', 'Zoe (Enhanced)', or 'en-GB premium'. Pass 'auto' to clear the " +
-			"preference and let the system pick the best available voice. The choice " +
-			"is persisted across sessions.",
-		promptSnippet: "Change the read-aloud (TTS) voice",
-		promptGuidelines: [
-			"Call set_voice when the user asks to change, switch, or reset the " +
-				"speaking/read-aloud voice (e.g. 'use Zoe', 'sound British', 'reset your voice').",
-		],
-		parameters: Type.Object({
-			name: Type.String({ description: "Voice name/language query, or 'auto' to reset." }),
-		}),
-		async execute(_id, params, _signal, _onUpdate, ctx) {
-			if (!ready) {
-				return { content: [{ type: "text", text: "swyft not ready — build it first." }], details: {} };
-			}
-			const q = params.name.trim();
-			if (/^(auto|default|reset|system)$/i.test(q)) {
-				voiceId = undefined;
-				saveConfig({ voiceId, sttEngine, whisperModel });
-				return { content: [{ type: "text", text: "Voice reset to auto (best available)." }], details: {} };
-			}
-			const voices = await getVoices();
-			const match = matchVoice(q, voices);
-			if (!match) {
-				const names = [...new Set(voices.filter((v) => v.language.startsWith("en")).map((v) => v.name))];
-				return {
-					content: [{ type: "text", text: `No voice matched "${q}". Installed English voices: ${names.join(", ")}.` }],
-					details: {},
-				};
-			}
-			voiceId = match.id;
-			saveConfig({ voiceId, sttEngine, whisperModel });
-			return {
-				content: [{ type: "text", text: `Voice set to ${match.name} (${match.language}, ${match.quality}).` }],
-				details: { voiceId: match.id },
-			};
-		},
-	});
-
 	// Switch the STT engine (persisted). `whisper` runs locally via WhisperKit;
 	// `apple` uses the native SFSpeechRecognizer. Takes effect next time voice
 	// mode starts. Optional second arg sets the whisper model.
-	pi.registerCommand("voice-engine", {
+	pi.registerCommand("voice-stt", {
 		description: "Set the STT engine: apple (native) or whisper (local). Optional: whisper model name.",
 		handler: async (args, ctx) => {
 			const parts = args.trim().split(/\s+/).filter(Boolean);
@@ -528,17 +467,41 @@ export default function (pi: ExtensionAPI) {
 			if (want !== "apple" && want !== "whisper") {
 				ctx.ui.notify(
 					`STT engine: ${sttEngine}${sttEngine === "whisper" ? ` (${whisperModel})` : ""}. ` +
-						"Usage: /voice-engine apple | whisper [model]",
+						"Usage: /voice-stt apple | whisper [model]",
 					"info",
 				);
 				return;
 			}
 			sttEngine = want;
 			if (want === "whisper" && parts[1]) whisperModel = parts[1];
-			saveConfig({ voiceId, sttEngine, whisperModel });
+			persist();
 			const label = want === "whisper" ? `whisper (${whisperModel})` : "apple (native)";
 			const note = voiceOn() ? " Restart voice mode (/voice off, then on) to apply." : "";
 			ctx.ui.notify(`STT engine set to ${label}.${note}`, "info");
+		},
+	});
+
+	// Switch the TTS (read-aloud) engine (persisted, takes effect immediately).
+	// `qwen` runs on-device Qwen3-TTS; pass a Qwen3 speaker id as a second arg
+	// (ryan, aiden, serena, vivian, eric, dylan, sohee, ono-anna, uncle-fu).
+	pi.registerCommand("voice-tts", {
+		description: "Set the read-aloud engine: auto | av | say | qwen [speaker].",
+		handler: async (args, ctx) => {
+			const parts = args.trim().split(/\s+/).filter(Boolean);
+			const want = (parts[0] || "").toLowerCase();
+			if (want !== "auto" && want !== "av" && want !== "say" && want !== "qwen") {
+				const cur = ttsEngine === "qwen" ? `qwen (${qwenVoice})` : ttsEngine;
+				ctx.ui.notify(
+					`TTS engine: ${cur}. Usage: /voice-tts auto | av | say | qwen [speaker]`,
+					"info",
+				);
+				return;
+			}
+			ttsEngine = want;
+			if (want === "qwen" && parts[1]) qwenVoice = parts[1].toLowerCase();
+			persist();
+			const label = want === "qwen" ? `qwen (${qwenVoice})` : want;
+			ctx.ui.notify(`TTS engine set to ${label}.`, "info");
 		},
 	});
 }

@@ -16,6 +16,8 @@ let package = Package(
             name: "swyft",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
+                // On-device Qwen3-TTS read-aloud engine (Core ML / ANE).
+                .product(name: "TTSKit", package: "WhisperKit"),
             ],
             path: "Sources/swyft",
             linkerSettings: [
