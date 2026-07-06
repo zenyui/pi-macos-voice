@@ -137,7 +137,6 @@ export default function (pi: ExtensionAPI) {
 	let voiceId: string | undefined = config.voiceId; // chosen TTS voice, if any
 	let sttEngine: SttEngine = config.sttEngine; // apple | whisper
 	let whisperModel: string = config.whisperModel;
-	let autoSend = false; // false = push-to-send (fill prompt, you press Enter)
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
 
@@ -158,7 +157,7 @@ export default function (pi: ExtensionAPI) {
 			case "off": return "";
 			case "thinking": return "🎙 thinking";
 			case "speaking": return "🎙 speaking";
-			default: return micMuted ? "🔇 muted" : autoSend ? "🎙 auto" : "🎙 push";
+			default: return micMuted ? "🔇 muted" : "🎙 on";
 		}
 	}
 
@@ -288,15 +287,7 @@ export default function (pi: ExtensionAPI) {
 					setMicMuted(true, ctx);
 					break;
 				}
-				if (autoSend) {
-					pi.sendUserMessage(`${MIC_PREFIX}${text}`);
-				} else {
-					// Push-to-send: drop the transcript into the prompt box and let
-					// the user review + press Enter. Prefix 🎙 on a fresh draft; when
-					// appending more dictation, don't repeat the marker.
-					const existing = ctx.ui.getEditorText?.() ?? "";
-					ctx.ui.setEditorText(existing ? `${existing} ${text}` : `${MIC_PREFIX}${text}`);
-				}
+				pi.sendUserMessage(`${MIC_PREFIX}${text}`);
 				break;
 			}
 			case "permission":
@@ -398,24 +389,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("voice", {
-		description: "Cycle voice mode: off → auto (send on pause) → push-to-talk (fill prompt) → off",
+		description: "Toggle voice mode on/off (speak, sends on pause).",
 		handler: async (_args, ctx) => {
 			if (!ready) {
 				ctx.ui.notify("swyft not ready — build the binary first.", "warning");
 				return;
 			}
 			if (!voiceOn()) {
-				// off → auto
-				autoSend = true;
 				await startVoice(ctx);
-				ctx.ui.notify("Voice: auto — speak, sends on pause.", "info");
-			} else if (autoSend) {
-				// auto → push-to-talk
-				autoSend = false;
-				setState(state, ctx); // refresh status label
-				ctx.ui.notify("Voice: push-to-talk — transcript fills the prompt, press Enter to send.", "info");
+				ctx.ui.notify("Voice on — speak, sends on pause.", "info");
 			} else {
-				// push-to-talk → off
 				await stopVoice(ctx);
 				ctx.ui.notify("Voice mode off.", "info");
 			}
@@ -466,30 +449,26 @@ export default function (pi: ExtensionAPI) {
 		label: "Voice Mode",
 		description:
 			"Turn native macOS voice mode on or off. When on, the user's speech is " +
-			"transcribed into prompts and the agent's replies are read aloud. " +
-			"mode 'auto' sends on pause; 'push' fills the prompt for the user to send.",
+			"transcribed into prompts and the agent's replies are read aloud.",
 		promptSnippet: "Enable/disable spoken voice mode (mic dictation + read-aloud replies)",
 		promptGuidelines: [
 			"Call voice_mode when the user asks to turn voice/dictation/read-aloud on or off.",
 		],
 		parameters: Type.Object({
 			action: StringEnum(["on", "off", "toggle"] as const),
-			mode: Type.Optional(StringEnum(["auto", "push"] as const)),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!ready) {
 				return {
 					content: [{ type: "text", text: "swyft not ready — build it first (npm run build && npm run build:app)." }],
-					details: { voiceOn, autoSend },
+					details: { voiceOn: voiceOn() },
 				};
 			}
 			const target = params.action === "toggle" ? !voiceOn() : params.action === "on";
-			if (params.mode) autoSend = params.mode === "auto";
 			if (target && !voiceOn()) await startVoice(ctx);
 			else if (!target && voiceOn()) await stopVoice(ctx);
-			else if (target && voiceOn()) setState(state, ctx); // refresh status after mode change
-			const label = voiceOn() ? `on (${autoSend ? "auto" : "push"})` : "off";
-			return { content: [{ type: "text", text: `Voice mode ${label}.` }], details: { voiceOn: voiceOn(), autoSend } };
+			const label = voiceOn() ? "on" : "off";
+			return { content: [{ type: "text", text: `Voice mode ${label}.` }], details: { voiceOn: voiceOn() } };
 		},
 	});
 
