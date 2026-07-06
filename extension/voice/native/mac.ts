@@ -1,6 +1,6 @@
-// macOS native boundary: launch the Swift `swyft` binary / Swyft.app and move
+// macOS native boundary: launch the Swift `picrophone` binary / Picrophone.app and move
 // bytes between it and TypeScript. This is the ONLY file that knows about the
-// swyft CLI, `open`, and the unix-socket callback transport. Providers call
+// picrophone CLI, `open`, and the unix-socket callback transport. Providers call
 // these helpers; the engine never sees them.
 
 import { spawn, type ChildProcess, execFile } from "node:child_process";
@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readNdjson, type HelperVersion, type SttMessage, type SttOptions, type SttSession, type SpeakHandle, type Voice } from "../protocol";
 
-const LOG_PATH = "/tmp/swyft-ext.log";
+const LOG_PATH = "/tmp/picrophone-ext.log";
 function log(msg: string): void {
 	try {
 		appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${msg}\n`);
@@ -20,18 +20,18 @@ function log(msg: string): void {
 
 // extension/voice/native/mac.ts -> ../../../bin
 const binDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "bin");
-const SWYFT_BIN = join(binDir, "swyft");
-const SWYFT_APP = join(binDir, "Swyft.app");
+const BIN = join(binDir, "picrophone");
+const APP = join(binDir, "Picrophone.app");
 
 /** Both the CLI binary and the .app bundle must be present. */
 export function binariesExist(): boolean {
-	return existsSync(SWYFT_BIN) && existsSync(SWYFT_APP);
+	return existsSync(BIN) && existsSync(APP);
 }
 
-/** Read `swyft version` (JSON handshake). */
+/** Read `picrophone version` (JSON handshake). */
 export function getVersion(): Promise<HelperVersion> {
 	return new Promise((resolve, reject) => {
-		execFile(SWYFT_BIN, ["version"], (err, stdout) => {
+		execFile(BIN, ["version"], (err, stdout) => {
 			if (err) return reject(err);
 			try {
 				resolve(JSON.parse(stdout.trim()));
@@ -43,15 +43,15 @@ export function getVersion(): Promise<HelperVersion> {
 }
 
 /**
- * Speak text aloud via `swyft tts`. Text is piped over stdin; killing the
+ * Speak text aloud via `picrophone tts`. Text is piped over stdin; killing the
  * process supports barge-in. `engine` (av | say | qwen) is optional; omit for
- * swyft's own `auto`. `voiceId` is an AVSpeech voice or a Qwen3 speaker id.
+ * picrophone's own `auto`. `voiceId` is an AVSpeech voice or a Qwen3 speaker id.
  */
 export function speak(text: string, opts: { engine?: string; voiceId?: string } = {}): SpeakHandle {
 	const args = ["tts"];
 	if (opts.engine) args.push("--engine", opts.engine);
 	if (opts.voiceId) args.push("--voice", opts.voiceId);
-	const child = spawn(SWYFT_BIN, args, { stdio: ["pipe", "ignore", "ignore"] });
+	const child = spawn(BIN, args, { stdio: ["pipe", "ignore", "ignore"] });
 	child.stdin.on("error", () => {});
 	child.stdin.end(text);
 	// Resolve on the FIRST of exit/close/error so `speaking` can never get stuck
@@ -84,10 +84,10 @@ export function speak(text: string, opts: { engine?: string; voiceId?: string } 
 	};
 }
 
-/** List installed TTS voices (parsed from `swyft voices` NDJSON). */
+/** List installed TTS voices (parsed from `picrophone voices` NDJSON). */
 export function getVoices(): Promise<Voice[]> {
 	return new Promise((resolve, reject) => {
-		execFile(SWYFT_BIN, ["voices"], (err, stdout) => {
+		execFile(BIN, ["voices"], (err, stdout) => {
 			if (err) return reject(err);
 			const voices: Voice[] = [];
 			for (const line of stdout.split("\n")) {
@@ -106,27 +106,27 @@ export function getVoices(): Promise<Voice[]> {
 export function hum(volume?: number): { kill: () => void } {
 	const args = ["hum"];
 	if (volume != null) args.push("--volume", String(volume));
-	const child = spawn(SWYFT_BIN, args, { stdio: "ignore" });
+	const child = spawn(BIN, args, { stdio: "ignore" });
 	return { kill: () => child.kill("SIGTERM") };
 }
 
 /** Play the short "listening" earcon (fire-and-forget). */
 export function chime(style = "bloop"): void {
 	try {
-		spawn(SWYFT_BIN, ["chime", "--style", style], { stdio: "ignore" });
+		spawn(BIN, ["chime", "--style", style], { stdio: "ignore" });
 	} catch {}
 }
 
 /**
- * Start STT: open a unix socket, launch Swyft.app (which detaches stdio, so it
+ * Start STT: open a unix socket, launch Picrophone.app (which detaches stdio, so it
  * connects back over the socket and streams NDJSON), stream parsed messages to
- * onMessage. `engine` selects apple | whisper inside swyft.
+ * onMessage. `engine` selects apple | whisper inside picrophone.
  */
 export function startStt(
 	onMessage: (msg: SttMessage) => void,
 	opts: SttOptions & { engine?: string } = {},
 ): SttSession {
-	const dir = join(tmpdir(), "swyft");
+	const dir = join(tmpdir(), "picrophone");
 	mkdirSync(dir, { recursive: true });
 	const sockPath = join(dir, `stt-${process.pid}-${Date.now()}.sock`);
 	if (existsSync(sockPath)) unlinkSync(sockPath);
@@ -136,7 +136,7 @@ export function startStt(
 
 	const server: Server = createServer((socket) => {
 		conn = socket;
-		log("Swyft.app connected to socket");
+		log("Picrophone.app connected to socket");
 		socket.on("close", () => log("socket closed"));
 		readNdjson(
 			socket,
@@ -164,7 +164,7 @@ export function startStt(
 
 	server.on("error", (e) => log(`socket server error: ${String(e)}`));
 	server.listen(sockPath, () => {
-		const args = ["-n", SWYFT_APP, "--args", "stt", "--socket", sockPath];
+		const args = ["-n", APP, "--args", "stt", "--socket", sockPath];
 		if (opts.silenceMs) args.push("--silence-ms", String(opts.silenceMs));
 		if (opts.locale) args.push("--locale", opts.locale);
 		if (opts.onDevice) args.push("--on-device");
@@ -174,7 +174,7 @@ export function startStt(
 		const child: ChildProcess = spawn("open", args, { stdio: "ignore" });
 		child.on("error", (e) => {
 			log(`open failed: ${String(e)}`);
-			onMessage({ type: "warn", message: "failed to launch Swyft.app" });
+			onMessage({ type: "warn", message: "failed to launch Picrophone.app" });
 		});
 		child.on("exit", (code) => log(`open exited code=${code}`));
 	});

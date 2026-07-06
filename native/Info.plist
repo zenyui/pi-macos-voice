@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>works.earendil.picrophone</string>
+	<key>CFBundleName</key>
+	<string>Picrophone</string>
+	<key>CFBundleDisplayName</key>
+	<string>Picrophone</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Picrophone uses the microphone to transcribe your speech for the pi coding agent.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Picrophone uses speech recognition to turn your dictation into text for the pi coding agent.</string>
+</dict>
+</plist>

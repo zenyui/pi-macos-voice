@@ -75,7 +75,7 @@ function saveConfig(cfg: VoiceConfig): void {
 	} catch {}
 }
 
-// Version the extension expects the swyft binary to match. Read from our own
+// Version the extension expects the picrophone binary to match. Read from our own
 // package.json (the single source of truth) so it can never drift from the
 // binary, which gen-version stamps from the same file.
 const EXPECTED_VERSION: string = JSON.parse(
@@ -162,7 +162,7 @@ export default function (pi: ExtensionAPI) {
 		const id = ttsEngine === "qwen" ? "qwen" : "system";
 		const prov = registry.tts.get(id);
 		if (isError(prov)) {
-			ctx.ui.notify(`swyft: ${prov.message}`, "error");
+			ctx.ui.notify(`picrophone: ${prov.message}`, "error");
 			return null;
 		}
 		return ttsEngine === "qwen"
@@ -194,7 +194,7 @@ export default function (pi: ExtensionAPI) {
 	function setState(next: VoiceState, ctx: ExtensionContext) {
 		const prev = state;
 		state = next;
-		ctx.ui.setStatus("swyft", statusFor());
+		ctx.ui.setStatus("picrophone", statusFor());
 		// Play a short earcon when we hand the turn back to the user (finished
 		// thinking/speaking). Fires within the TTS mute tail, so it isn't
 		// re-transcribed as input.
@@ -210,8 +210,8 @@ export default function (pi: ExtensionAPI) {
 	function setMicMuted(on: boolean, ctx: ExtensionContext) {
 		if (micMuted === on) return;
 		micMuted = on;
-		ctx.ui.setWidget("swyft", []);
-		ctx.ui.setStatus("swyft", statusFor());
+		ctx.ui.setWidget("picrophone", []);
+		ctx.ui.setStatus("picrophone", statusFor());
 		ctx.ui.notify(on ? 'Mic muted — say "unmute" to resume.' : "Mic live.", "info");
 		playChime(on ? "down" : "bloop");
 	}
@@ -282,7 +282,7 @@ export default function (pi: ExtensionAPI) {
 		clearSpeakQueue();
 		stopHum();
 		if (!ctx.isIdle()) ctx.abort();
-		ctx.ui.setWidget("swyft", []);
+		ctx.ui.setWidget("picrophone", []);
 		if (state !== "off") setState("listening", ctx);
 	}
 
@@ -301,11 +301,11 @@ export default function (pi: ExtensionAPI) {
 					break;
 				}
 				if (muted) break; // ignore our own TTS echo; only a stop word is heard
-				ctx.ui.setWidget("swyft", [`🎙 ${msg.text}`]);
+				ctx.ui.setWidget("picrophone", [`🎙 ${msg.text}`]);
 				break;
 			}
 			case "final": {
-				ctx.ui.setWidget("swyft", []);
+				ctx.ui.setWidget("picrophone", []);
 				const text = msg.text.trim();
 				if (!text) break;
 				// Unmute is always allowed (even while muted), final-only.
@@ -330,18 +330,18 @@ export default function (pi: ExtensionAPI) {
 			}
 			case "permission":
 				ctx.ui.notify(
-					`swyft: mic=${msg.mic}, speech=${msg.speech}. Grant access to Swyft in System Settings → Privacy.`,
+					`picrophone: mic=${msg.mic}, speech=${msg.speech}. Grant access to Picrophone in System Settings → Privacy.`,
 					"error",
 				);
 				void stopVoice(ctx);
 				break;
 			case "warn":
-				ctx.ui.notify(`swyft: ${msg.message}`, "warning");
+				ctx.ui.notify(`picrophone: ${msg.message}`, "warning");
 				break;
 			case "progress":
 				// Model download/compile status (whisper first run). Show it live in
 				// the footer rather than as stacked notifications.
-				ctx.ui.setStatus("swyft", `🎙 ${msg.message}`);
+				ctx.ui.setStatus("picrophone", `🎙 ${msg.message}`);
 				break;
 		}
 	}
@@ -349,18 +349,18 @@ export default function (pi: ExtensionAPI) {
 	async function startVoice(ctx: ExtensionContext) {
 		if (!ready || voiceOn()) return;
 		setState("listening", ctx);
-		ctx.ui.setStatus("swyft", "🎙 starting…");
+		ctx.ui.setStatus("picrophone", "🎙 starting…");
 		if (sttEngine === "whisper") {
 			ctx.ui.notify(
 				`Voice STT: whisper (${whisperModel}). First run downloads the model ` +
-					"(~150 MB for base.en) to ~/Library/Caches/pi-macos-voice — one time, " +
+					"(~150 MB for base.en) to ~/Library/Caches/picrophone — one time, " +
 					"then cached. Progress shows in the footer.",
 				"info",
 			);
 		}
 		const prov = registry.stt.get(sttEngine);
 		if (isError(prov)) {
-			ctx.ui.notify(`swyft: ${prov.message}`, "error");
+			ctx.ui.notify(`picrophone: ${prov.message}`, "error");
 			setState("off", ctx);
 			return;
 		}
@@ -376,27 +376,27 @@ export default function (pi: ExtensionAPI) {
 		micMuted = false;
 		stopHum();
 		clearSpeakQueue();
-		ctx.ui.setWidget("swyft", []);
+		ctx.ui.setWidget("picrophone", []);
 		setState("off", ctx);
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!binariesExist()) {
-			ctx.ui.notify("swyft binary/app missing — run `npm run build && npm run build:app`.", "warning");
+			ctx.ui.notify("picrophone binary/app missing — run `npm run build && npm run build:app`.", "warning");
 			return;
 		}
 		try {
 			const v = await getVersion();
 			if (v.version !== EXPECTED_VERSION) {
 				ctx.ui.notify(
-					`swyft version ${v.version} != extension ${EXPECTED_VERSION}; rebuild (npm run build).`,
+					`picrophone version ${v.version} != extension ${EXPECTED_VERSION}; rebuild (npm run build).`,
 					"warning",
 				);
 				return;
 			}
 			ready = true;
 		} catch {
-			ctx.ui.notify("swyft: failed to read version; rebuild the binary.", "warning");
+			ctx.ui.notify("picrophone: failed to read version; rebuild the binary.", "warning");
 		}
 	});
 
@@ -435,7 +435,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Toggle voice mode on/off (speak, sends on pause).",
 		handler: async (_args, ctx) => {
 			if (!ready) {
-				ctx.ui.notify("swyft not ready — build the binary first.", "warning");
+				ctx.ui.notify("picrophone not ready — build the binary first.", "warning");
 				return;
 			}
 			if (!voiceOn()) {
@@ -465,7 +465,7 @@ export default function (pi: ExtensionAPI) {
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			if (!ready) {
 				return {
-					content: [{ type: "text", text: "swyft not ready — build it first (npm run build && npm run build:app)." }],
+					content: [{ type: "text", text: "picrophone not ready — build it first (npm run build && npm run build:app)." }],
 					details: { voiceOn: voiceOn() },
 				};
 			}

@@ -1,5 +1,5 @@
-// On-device Qwen3-TTS, wrapping `swyft tts --engine qwen` (macOS). The model
-// lives inside the swyft binary today (Swift TTSKit); this is the thin wrapper.
+// On-device Qwen3-TTS, wrapping `picrophone tts --engine qwen` (macOS). The model
+// lives inside the picrophone binary today (Swift TTSKit); this is the thin wrapper.
 // `voiceId` is a Qwen3 speaker id (ryan, aiden, serena, …), not an AVSpeech voice.
 
 import type { SpeakHandle, SpeakOptions, TtsProvider } from "../protocol";
@@ -15,7 +15,7 @@ export const qwenTts: TtsProvider = {
 	readiness() {
 		return binariesExist()
 			? { available: true }
-			: { available: false, reason: "swyft binary/app missing — run `npm run build`." };
+			: { available: false, reason: "picrophone binary/app missing — run `npm run build`." };
 	},
 	speak(text: string, opts: SpeakOptions = {}): SpeakHandle {
 		return speak(text, { engine: "qwen", voiceId: opts.voiceId || DEFAULT_QWEN_VOICE });
