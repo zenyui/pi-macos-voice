@@ -14,6 +14,7 @@
     "build": "npm run gen-version && npm run build:swift && npm run install-bin && npm run build:app",
     "install-bin": "mkdir -p bin && cp \"$(swift build --package-path swyft -c release --show-bin-path)/swyft\" bin/swyft && chmod +x bin/swyft && codesign --force --sign - bin/swyft",
     "build:app": "bash scripts/build-app.sh",
+    "build:cues": "node scripts/bake-cues.mjs",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf swyft/.build bin/swyft bin/Swyft.app swyft/Sources/swyft/Version.swift"
   },

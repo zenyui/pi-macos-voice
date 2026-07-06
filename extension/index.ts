@@ -6,16 +6,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { toSpeakable } from "./speakable";
-import {
-	binariesExist,
-	chime,
-	getVersion,
-	hum,
-	speak,
-	startStt,
-	type SttMessage,
-	type SttSession,
-} from "./swyft";
+import { binariesExist, getVersion } from "./voice/native/mac";
+import { registry, isError } from "./voice/registry";
+import type { CueStyle, SpeakHandle, SttMessage, SttSession } from "./voice/protocol";
+import { DEFAULT_WHISPER_MODEL } from "./voice/stt/whisper";
+import { DEFAULT_QWEN_VOICE } from "./voice/tts/qwen";
 
 // Persisted engine preferences (STT + TTS). Each TTS provider has its own
 // built-in default voice; there is no per-voice picker. Lives outside the repo
@@ -30,8 +25,6 @@ type SttEngine = "apple" | "whisper";
 // Read-aloud engine: "auto" (system default, best of av/say), or an explicit
 // backend. "qwen" runs on-device Qwen3-TTS via WhisperKit's TTSKit.
 type TtsEngine = "auto" | "av" | "say" | "qwen";
-const DEFAULT_WHISPER_MODEL = "base.en";
-const DEFAULT_QWEN_VOICE = "aiden";
 interface VoiceConfig {
 	sttEngine: SttEngine;
 	whisperModel: string;
@@ -157,6 +150,26 @@ export default function (pi: ExtensionAPI) {
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
 
+	// Cues provider (default: cross-platform baked WAVs). Resolved once; may be
+	// undefined on an unsupported host, so every call site is null-guarded.
+	const cues = registry.cues.default();
+	const playChime = (style?: CueStyle) => cues?.chime(style);
+
+	// Resolve the TTS provider + speak options for the current engine setting.
+	// "qwen" -> qwen provider (Qwen3 speaker id); everything else -> system
+	// provider with the engine hint ("auto" | "av" | "say").
+	function speakNow(text: string, ctx: ExtensionContext): SpeakHandle | null {
+		const id = ttsEngine === "qwen" ? "qwen" : "system";
+		const prov = registry.tts.get(id);
+		if (isError(prov)) {
+			ctx.ui.notify(`swyft: ${prov.message}`, "error");
+			return null;
+		}
+		return ttsEngine === "qwen"
+			? prov.speak(text, { voiceId: qwenVoice })
+			: prov.speak(text, { engine: ttsEngine });
+	}
+
 	// TTS + speak queue.
 	let speaking: { kill: () => void } | null = null;
 	let speakGen = 0; // guards the post-playback echo-flush timer
@@ -185,7 +198,7 @@ export default function (pi: ExtensionAPI) {
 		// Play a short earcon when we hand the turn back to the user (finished
 		// thinking/speaking). Fires within the TTS mute tail, so it isn't
 		// re-transcribed as input.
-		if (next === "listening" && (prev === "thinking" || prev === "speaking")) chime();
+		if (next === "listening" && (prev === "thinking" || prev === "speaking")) playChime();
 	}
 
 	function stopHum() {
@@ -200,7 +213,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setWidget("swyft", []);
 		ctx.ui.setStatus("swyft", statusFor());
 		ctx.ui.notify(on ? 'Mic muted — say "unmute" to resume.' : "Mic live.", "info");
-		chime(on ? "down" : "bloop");
+		playChime(on ? "down" : "bloop");
 	}
 
 	// --- Speak queue: items play to completion in order (no overlap). ------
@@ -220,10 +233,13 @@ export default function (pi: ExtensionAPI) {
 		if (state !== "speaking") setState("speaking", ctx);
 		// For Qwen, --voice selects a Qwen3 speaker; the system engines (av/say)
 		// use their own built-in default voice.
-		const s =
-			ttsEngine === "qwen"
-				? speak(next, { engine: "qwen", voiceId: qwenVoice })
-				: speak(next, { engine: ttsEngine === "auto" ? undefined : ttsEngine });
+		const s = speakNow(next, ctx);
+		if (!s) {
+			// Provider unavailable: skip this item, keep draining the queue.
+			if (state === "speaking" && speakQueue.length === 0) setState("listening", ctx);
+			else drainSpeak(ctx);
+			return;
+		}
 		speaking = s;
 		void s.done.then(() => {
 			if (speaking === s) {
@@ -342,9 +358,14 @@ export default function (pi: ExtensionAPI) {
 				"info",
 			);
 		}
-		stt = startStt((msg) => handleStt(msg, ctx), {
+		const prov = registry.stt.get(sttEngine);
+		if (isError(prov)) {
+			ctx.ui.notify(`swyft: ${prov.message}`, "error");
+			setState("off", ctx);
+			return;
+		}
+		stt = prov.start((msg: SttMessage) => handleStt(msg, ctx), {
 			silenceMs: 1200,
-			engine: sttEngine,
 			model: sttEngine === "whisper" ? whisperModel : undefined,
 		});
 	}
@@ -392,7 +413,7 @@ export default function (pi: ExtensionAPI) {
 		if (!voiceOn()) return;
 		clearSpeakQueue(); // new turn: drop any leftover readback
 		setState("thinking", ctx);
-		if (!humming) humming = hum();
+		if (!humming) humming = cues?.hum() ?? null;
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
