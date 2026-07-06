@@ -496,6 +496,89 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// LLM-callable config setter. Kept deliberately small: a single freeform
+	// `settings` object, no per-field schema. Called with no settings it returns
+	// the current config plus valid values, so the model discovers the shape on
+	// demand instead of paying for a verbose schema every turn. Validation lives
+	// here, not in the JSON schema.
+	const STT_ENGINES = ["apple", "whisper"] as const;
+	const TTS_ENGINES = ["auto", "av", "say", "qwen"] as const;
+	const QWEN_SPEAKERS = [
+		"ryan", "aiden", "serena", "vivian", "eric", "dylan", "sohee", "ono-anna", "uncle-fu",
+	] as const;
+	function configSnapshot() {
+		return { sttEngine, whisperModel, ttsEngine, qwenVoice };
+	}
+	pi.registerTool({
+		name: "voice_config",
+		label: "Voice Config",
+		description:
+			"Get or set picrophone voice settings. Call with no settings to read the " +
+			"current config and the valid values for each field, then call again with " +
+			"the fields you want to change.",
+		promptSnippet: "Read or change voice STT/TTS settings (call empty first to see valid values)",
+		parameters: Type.Object({
+			settings: Type.Optional(
+				Type.Record(Type.String(), Type.String(), {
+					description: "Fields to change: sttEngine, whisperModel, ttsEngine, qwenVoice.",
+				}),
+			),
+		}),
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const s = params.settings ?? {};
+			const keys = Object.keys(s);
+			if (keys.length === 0) {
+				return {
+					content: [{
+						type: "text",
+						text: JSON.stringify({
+							current: configSnapshot(),
+							valid: {
+								sttEngine: STT_ENGINES,
+								ttsEngine: TTS_ENGINES,
+								qwenVoice: QWEN_SPEAKERS,
+								whisperModel: "any whisper model, e.g. tiny.en, base.en, small.en, large-v3-turbo",
+							},
+						}, null, 2),
+					}],
+					details: { ok: true, config: configSnapshot() },
+				};
+			}
+			const errors: string[] = [];
+			for (const k of keys) {
+				const v = String(s[k]);
+				switch (k) {
+					case "sttEngine":
+						if ((STT_ENGINES as readonly string[]).includes(v)) sttEngine = v as SttEngine;
+						else errors.push(`sttEngine must be one of ${STT_ENGINES.join(", ")}`);
+						break;
+					case "ttsEngine":
+						if ((TTS_ENGINES as readonly string[]).includes(v)) ttsEngine = v as TtsEngine;
+						else errors.push(`ttsEngine must be one of ${TTS_ENGINES.join(", ")}`);
+						break;
+					case "whisperModel":
+						whisperModel = v;
+						break;
+					case "qwenVoice":
+						qwenVoice = v.toLowerCase();
+						break;
+					default:
+						errors.push(`unknown field "${k}"`);
+				}
+			}
+			if (errors.length) {
+				return { content: [{ type: "text", text: `Rejected: ${errors.join("; ")}` }], details: { ok: false } };
+			}
+			persist();
+			ctx.ui.setStatus("picrophone", statusFor());
+			const note = voiceOn() ? " Restart voice mode (/voice off, then on) to apply STT changes." : "";
+			return {
+				content: [{ type: "text", text: `Updated. Config is now ${JSON.stringify(configSnapshot())}.${note}` }],
+				details: { ok: true, config: configSnapshot() },
+			};
+		},
+	});
+
 	// Switch the STT engine (persisted). `whisper` runs locally via WhisperKit;
 	// `apple` uses the native SFSpeechRecognizer. Takes effect next time voice
 	// mode starts. Optional second arg sets the whisper model.
