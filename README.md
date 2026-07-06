@@ -48,7 +48,7 @@ Then just talk:
 
 ## Requirements
 
-- **macOS on Apple Silicon (arm64).** The shipped binary is arm64-only.
+- **macOS on Apple Silicon or Intel.** The shipped binary is universal (arm64 + x86_64).
 - **macOS 13+** (uses `Speech.framework` + `AVAudioEngine`).
 - **pi** ≥ 0.80.
 
@@ -67,10 +67,12 @@ To pin a version, append a ref: `pi install git:github.com/zenyui/picrophone@v0.
 Remove with `pi remove picrophone`.
 
 **How it installs:** pi `git clone`s the repo into `~/.pi/agent/git/github.com/zenyui/picrophone`,
-adds it to your settings so it loads every session, and runs `npm install` for
-any dependencies (there are none at runtime). The committed `bin/picrophone` and
-`Picrophone.app` come down with the clone, and the extension finds them next to
-itself. Because it's a git clone rather than a downloaded archive, macOS doesn't
+adds it to your settings so it loads every session, and runs `npm install`. The
+platform binary + app ship in per-OS packages (`picrophone-darwin`, gated by
+npm on `os`/`cpu`) that install as `optionalDependencies`; the extension
+resolves the binary from whichever one matches your machine, and falls back to
+the in-repo `packages/picrophone-<platform>/bin` when run from a checkout.
+Because it's a git clone rather than a downloaded archive, macOS doesn't
 quarantine the files, so the ad-hoc-signed app runs without notarization.
 
 ## Permissions
@@ -220,8 +222,10 @@ pi -e /absolute/path/to/picrophone/extension/index.ts
 ```
 
 The extension finds its binaries in `bin/` relative to itself, so keep
-`extension/` and `bin/` together. `bin/picrophone` and `bin/Picrophone.app` are committed
-so a fresh checkout runs without building, on Apple Silicon.
+`extension/` together with the platform package under `packages/`. The
+universal (arm64 + x86_64) `picrophone` binary and `Picrophone.app` are
+committed in `packages/picrophone-darwin/bin`, so a fresh checkout runs without
+building on any Mac.
 
 ### Commit conventions
 
@@ -288,7 +292,6 @@ Until then, `--engine neural` resolves to `av` (AVSpeechSynthesizer) on Tahoe an
 
 ## Limitations (v0)
 
-- Apple Silicon only in the committed binary.
 - The `neural` TTS engine is a reserved stub — it currently falls back to
   AVSpeechSynthesizer until the new macOS synthesis API is wired up.
 - No acoustic echo cancellation: while speaking, only stop words are heard
