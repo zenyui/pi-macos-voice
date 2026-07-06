@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import TTSKit
 import Hub
 
@@ -37,6 +38,21 @@ private func installExitOnSignal() {
 }
 private var signalSources: [DispatchSourceSignal] = []
 
+// The voice the user selected in System Settings (Spoken Content / Accessibility).
+// NSSpeechSynthesizer.defaultVoice reflects that choice; we map it to the matching
+// AVSpeechSynthesisVoice by identifier (falling back to name) so `--engine av`
+// honors the user's system pick.
+private func systemDefaultVoice() -> AVSpeechSynthesisVoice? {
+    let def = NSSpeechSynthesizer.defaultVoice
+    let voices = AVSpeechSynthesisVoice.speechVoices()
+    if let byId = voices.first(where: { $0.identifier == def.rawValue }) { return byId }
+    let attrs = NSSpeechSynthesizer.attributes(forVoice: def)
+    if let name = attrs[.name] as? String {
+        return voices.first { $0.name == name }
+    }
+    return nil
+}
+
 // Best English voice the user has installed, but ONLY if it's better than the
 // stock default (enhanced/premium) — otherwise return nil so we fall back to the
 // system default voice instead of an arbitrary novelty voice. Prefer en-US.
@@ -60,7 +76,9 @@ private func speakAV(_ text: String, voiceId: String?, rate: Float?) -> Never {
     if let voiceId, let voice = AVSpeechSynthesisVoice(identifier: voiceId) {
         utterance.voice = voice
     } else {
-        utterance.voice = bestEnglishVoice() ?? AVSpeechSynthesisVoice(language: "en-US")
+        utterance.voice = systemDefaultVoice()
+            ?? bestEnglishVoice()
+            ?? AVSpeechSynthesisVoice(language: "en-US")
     }
     if let rate { utterance.rate = max(0, min(1, rate)) }
 

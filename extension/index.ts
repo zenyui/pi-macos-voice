@@ -182,13 +182,19 @@ export default function (pi: ExtensionAPI) {
 	// Hum (thinking sound).
 	let humming: { kill: () => void } | null = null;
 
+	function engineInfo(): string {
+		return `(tts: ${ttsEngine}, stt: ${sttEngine})`;
+	}
+
 	function statusFor(): string {
+		let base: string;
 		switch (state) {
 			case "off": return "";
-			case "thinking": return "🎙 thinking";
-			case "speaking": return "🎙 speaking";
-			default: return micMuted ? "🔇 muted" : "🎙 on";
+			case "thinking": base = "🎙 thinking"; break;
+			case "speaking": base = "🎙 speaking"; break;
+			default: base = micMuted ? "🔇 muted" : "🎙 on"; break;
 		}
+		return `${base} ${engineInfo()}`;
 	}
 
 	function setState(next: VoiceState, ctx: ExtensionContext) {
