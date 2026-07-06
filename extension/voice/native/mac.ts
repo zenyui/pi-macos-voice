@@ -1,7 +1,7 @@
-// Bridge to the native swyft binary / Swyft.app.
-// - TTS: spawn `swyft tts`, text via stdin (killable for barge-in).
-// - STT: listen on a unix socket, launch Swyft.app which connects back and
-//   streams NDJSON; control it via a `stop` line over the same socket.
+// macOS native boundary: launch the Swift `swyft` binary / Swyft.app and move
+// bytes between it and TypeScript. This is the ONLY file that knows about the
+// swyft CLI, `open`, and the unix-socket callback transport. Providers call
+// these helpers; the engine never sees them.
 
 import { spawn, type ChildProcess, execFile } from "node:child_process";
 import { createServer, type Server, type Socket } from "node:net";
@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readNdjson, type HelperVersion, type SttMessage, type SttOptions, type SttSession, type SpeakHandle, type Voice } from "../protocol";
 
 const LOG_PATH = "/tmp/swyft-ext.log";
 function log(msg: string): void {
@@ -17,37 +18,18 @@ function log(msg: string): void {
 	} catch {}
 }
 
-const binDir = join(dirname(fileURLToPath(import.meta.url)), "..", "bin");
+// extension/voice/native/mac.ts -> ../../../bin
+const binDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "bin");
 const SWYFT_BIN = join(binDir, "swyft");
 const SWYFT_APP = join(binDir, "Swyft.app");
 
-export interface SwyftVersion {
-	name: string;
-	version: string;
-	protocol: number;
-	capabilities: string[];
-	/** Running macOS version, e.g. "15.7.4" (added in later builds). */
-	os?: string;
-	/** TTS engines available on this OS, best-first, e.g. ["av","say"]. */
-	ttsEngines?: string[];
-	/** Engine `--engine auto` resolves to on this OS. */
-	ttsEngine?: string;
-}
-
-export type SttMessage =
-	| { type: "ready" }
-	| { type: "partial"; text: string }
-	| { type: "final"; text: string }
-	| { type: "permission"; mic: string; speech: string }
-	| { type: "warn"; message: string }
-	/** Model download / load progress (whisper first run). */
-	| { type: "progress"; message: string };
-
+/** Both the CLI binary and the .app bundle must be present. */
 export function binariesExist(): boolean {
 	return existsSync(SWYFT_BIN) && existsSync(SWYFT_APP);
 }
 
-export function getVersion(): Promise<SwyftVersion> {
+/** Read `swyft version` (JSON handshake). */
+export function getVersion(): Promise<HelperVersion> {
 	return new Promise((resolve, reject) => {
 		execFile(SWYFT_BIN, ["version"], (err, stdout) => {
 			if (err) return reject(err);
@@ -61,15 +43,11 @@ export function getVersion(): Promise<SwyftVersion> {
 }
 
 /**
- * Speak text aloud. Returns a handle whose .kill() supports barge-in.
- * `engine` defaults to swyft's own `auto` (best available for the macOS
- * version); pass "av" | "say" | "qwen" to force one. For "qwen", `voiceId`
- * is a Qwen3 speaker id (e.g. "ryan", "serena"), not an AVSpeechSynthesisVoice.
+ * Speak text aloud via `swyft tts`. Text is piped over stdin; killing the
+ * process supports barge-in. `engine` (av | say | qwen) is optional; omit for
+ * swyft's own `auto`. `voiceId` is an AVSpeech voice or a Qwen3 speaker id.
  */
-export function speak(
-	text: string,
-	opts: { engine?: string; voiceId?: string } = {},
-): { done: Promise<void>; kill: () => void } {
+export function speak(text: string, opts: { engine?: string; voiceId?: string } = {}): SpeakHandle {
 	const args = ["tts"];
 	if (opts.engine) args.push("--engine", opts.engine);
 	if (opts.voiceId) args.push("--voice", opts.voiceId);
@@ -106,13 +84,6 @@ export function speak(
 	};
 }
 
-export interface Voice {
-	id: string;
-	name: string;
-	language: string;
-	quality: "premium" | "enhanced" | "default";
-}
-
 /** List installed TTS voices (parsed from `swyft voices` NDJSON). */
 export function getVoices(): Promise<Voice[]> {
 	return new Promise((resolve, reject) => {
@@ -146,24 +117,14 @@ export function chime(style = "bloop"): void {
 	} catch {}
 }
 
-export interface SttSession {
-	stop: () => void;
-	/** Discard any audio the recognizer accumulated (e.g. our own TTS echo). */
-	reset: () => void;
-}
-
-/** Start STT: open a socket, launch Swyft.app, stream messages to onMessage. */
+/**
+ * Start STT: open a unix socket, launch Swyft.app (which detaches stdio, so it
+ * connects back over the socket and streams NDJSON), stream parsed messages to
+ * onMessage. `engine` selects apple | whisper inside swyft.
+ */
 export function startStt(
 	onMessage: (msg: SttMessage) => void,
-	opts: {
-		silenceMs?: number;
-		locale?: string;
-		onDevice?: boolean;
-		/** STT engine: "apple" (SFSpeechRecognizer) or "whisper" (WhisperKit). */
-		engine?: string;
-		/** whisper only: model name (tiny.en, base.en, small.en, large-v3-turbo, …). */
-		model?: string;
-	} = {},
+	opts: SttOptions & { engine?: string } = {},
 ): SttSession {
 	const dir = join(tmpdir(), "swyft");
 	mkdirSync(dir, { recursive: true });
@@ -177,23 +138,17 @@ export function startStt(
 		conn = socket;
 		log("Swyft.app connected to socket");
 		socket.on("close", () => log("socket closed"));
-		let buf = "";
-		socket.on("data", (chunk) => {
-			buf += chunk.toString("utf8");
-			let nl: number;
-			while ((nl = buf.indexOf("\n")) >= 0) {
-				const line = buf.slice(0, nl).trim();
-				buf = buf.slice(nl + 1);
-				if (!line) continue;
-				try {
-					const msg = JSON.parse(line) as SttMessage;
-					log(`recv: ${line}`);
-					onMessage(msg);
-				} catch {
-					log(`recv (unparsed): ${line}`);
-				}
-			}
-		});
+		readNdjson(
+			socket,
+			(obj) => {
+				log(`recv: ${JSON.stringify(obj)}`);
+				onMessage(obj as SttMessage);
+			},
+			(raw) => {
+				// keep a trace of unparsed lines too
+				if (raw.length && raw[0] !== "{") log(`recv (unparsed): ${raw}`);
+			},
+		);
 	});
 
 	const cleanup = () => {
