@@ -9,6 +9,7 @@ import { appendFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { readNdjson, type HelperVersion, type SttMessage, type SttOptions, type SttSession, type SpeakHandle, type Voice } from "../protocol";
 
 const LOG_PATH = "/tmp/picrophone-ext.log";
@@ -18,8 +19,23 @@ function log(msg: string): void {
 	} catch {}
 }
 
-// extension/voice/native/mac.ts -> ../../../bin
-const binDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "bin");
+// The platform binaries ship in a per-platform package (`picrophone-darwin`)
+// installed as an optionalDependency and gated by npm on `os`/`cpu`. Resolve
+// its `bin/` at runtime; fall back to the in-repo workspace copy for local dev
+// (`pi -e ...` from a checkout, where the package is symlinked or not installed).
+const here = dirname(fileURLToPath(import.meta.url));
+function resolveBinDir(): string {
+	const pkg = `picrophone-${process.platform}`;
+	try {
+		// Resolves through node_modules (npm install) or the workspace symlink.
+		return dirname(createRequire(import.meta.url).resolve(`${pkg}/package.json`));
+	} catch {
+		// Dev fallback: packages/<pkg> relative to this file in the source tree.
+		// extension/voice/native/mac.ts -> ../../../packages/<pkg>
+		return join(here, "..", "..", "..", "packages", pkg);
+	}
+}
+const binDir = join(resolveBinDir(), "bin");
 const BIN = join(binDir, "picrophone");
 const APP = join(binDir, "Picrophone.app");
 

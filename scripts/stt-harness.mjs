@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const app = join(root, "bin/Picrophone.app");
+const app = join(root, "packages/picrophone-darwin/bin/Picrophone.app");
 const sockPath = `/tmp/picrophone-stt-${process.pid}.sock`;
 
 if (existsSync(sockPath)) unlinkSync(sockPath);

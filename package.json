@@ -11,15 +11,25 @@
       "./extension/index.ts"
     ]
   },
+  "files": [
+    "extension",
+    "assets",
+    "README.md"
+  ],
+  "optionalDependencies": {
+    "picrophone-darwin": "0.8.0",
+    "picrophone-win32": "0.8.0"
+  },
   "scripts": {
     "gen-version": "node scripts/gen-version.mjs",
-    "build:swift": "swift build --package-path native -c release",
+    "build:swift": "swift build --package-path native -c release --arch arm64 && swift build --package-path native -c release --arch x86_64",
     "build": "npm run gen-version && npm run build:swift && npm run install-bin && npm run build:app",
-    "install-bin": "mkdir -p bin && cp \"$(swift build --package-path native -c release --show-bin-path)/picrophone\" bin/picrophone && chmod +x bin/picrophone && codesign --force --sign - bin/picrophone",
+    "install-bin": "bash scripts/install-bin.sh",
     "build:app": "bash scripts/build-app.sh",
     "build:cues": "node scripts/bake-cues.mjs",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf native/.build bin/picrophone bin/Picrophone.app native/Sources/picrophone/Version.swift"
+    "clean": "rm -rf native/.build packages/picrophone-darwin/bin/picrophone packages/picrophone-darwin/bin/Picrophone.app native/Sources/picrophone/Version.swift",
+    "publish:all": "bash scripts/publish.sh"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.80.3",

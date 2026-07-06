@@ -5,8 +5,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/bin/picrophone"
-APP="$ROOT/bin/Picrophone.app"
+BINDIR="$ROOT/packages/picrophone-darwin/bin"
+BIN="$BINDIR/picrophone"
+APP="$BINDIR/Picrophone.app"
 PLIST="$ROOT/native/Info.plist"
 
 [ -x "$BIN" ] || { echo "build-app: $BIN missing; run npm run build:swift first" >&2; exit 1; }
