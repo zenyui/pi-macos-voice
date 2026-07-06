@@ -32,28 +32,46 @@ interface VoiceConfig {
 	// Qwen3 speaker id (e.g. ryan, serena) used when ttsEngine === "qwen".
 	qwenVoice: string;
 }
-function loadConfig(): VoiceConfig {
+const VALID_STT_ENGINES = ["apple", "whisper"];
+const VALID_TTS_ENGINES = ["auto", "av", "say", "qwen"];
+const DEFAULT_CONFIG: VoiceConfig = {
+	sttEngine: "whisper",
+	whisperModel: DEFAULT_WHISPER_MODEL,
+	ttsEngine: "av",
+	qwenVoice: DEFAULT_QWEN_VOICE,
+};
+
+// Read + validate the on-disk config. Returns the coerced config plus a list of
+// human-readable warnings for any values that were invalid and got defaulted,
+// so callers (e.g. /voice start) can surface them instead of silently resetting.
+function readConfig(): { config: VoiceConfig; warnings: string[] } {
+	const warnings: string[] = [];
+	let raw: Record<string, unknown>;
 	try {
-		const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
-		if (typeof cfg.version === "number" && cfg.version > CONFIG_VERSION) throw 0;
-		const tts: TtsEngine =
-			cfg.ttsEngine === "av" || cfg.ttsEngine === "say" || cfg.ttsEngine === "qwen"
-				? cfg.ttsEngine
-				: "av";
-		return {
-			sttEngine: cfg.sttEngine === "apple" ? "apple" : "whisper",
-			whisperModel: cfg.whisperModel || DEFAULT_WHISPER_MODEL,
-			ttsEngine: tts,
-			qwenVoice: cfg.qwenVoice || DEFAULT_QWEN_VOICE,
-		};
+		raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 	} catch {
-		return {
-			sttEngine: "whisper",
-			whisperModel: DEFAULT_WHISPER_MODEL,
-			ttsEngine: "av",
-			qwenVoice: DEFAULT_QWEN_VOICE,
-		};
+		return { config: { ...DEFAULT_CONFIG }, warnings };
 	}
+	if (typeof raw.version === "number" && raw.version > CONFIG_VERSION) {
+		warnings.push(`config version ${raw.version} is newer than supported (${CONFIG_VERSION}); using defaults.`);
+		return { config: { ...DEFAULT_CONFIG }, warnings };
+	}
+	const cfg = { ...DEFAULT_CONFIG };
+	if (raw.sttEngine !== undefined) {
+		if (VALID_STT_ENGINES.includes(raw.sttEngine as string)) cfg.sttEngine = raw.sttEngine as SttEngine;
+		else warnings.push(`sttEngine "${raw.sttEngine}" is invalid (use ${VALID_STT_ENGINES.join(" | ")}); using ${cfg.sttEngine}.`);
+	}
+	if (raw.ttsEngine !== undefined) {
+		if (VALID_TTS_ENGINES.includes(raw.ttsEngine as string)) cfg.ttsEngine = raw.ttsEngine as TtsEngine;
+		else warnings.push(`ttsEngine "${raw.ttsEngine}" is invalid (use ${VALID_TTS_ENGINES.join(" | ")}); using ${cfg.ttsEngine}.`);
+	}
+	if (typeof raw.whisperModel === "string" && raw.whisperModel) cfg.whisperModel = raw.whisperModel;
+	if (typeof raw.qwenVoice === "string" && raw.qwenVoice) cfg.qwenVoice = raw.qwenVoice;
+	return { config: cfg, warnings };
+}
+
+function loadConfig(): VoiceConfig {
+	return readConfig().config;
 }
 function saveConfig(cfg: VoiceConfig): void {
 	try {
@@ -354,6 +372,15 @@ export default function (pi: ExtensionAPI) {
 
 	async function startVoice(ctx: ExtensionContext) {
 		if (!ready || voiceOn()) return;
+		// Re-read the config file so edits made since startup (e.g. by the agent
+		// editing pivoice.json directly) take effect, and surface any invalid
+		// values instead of silently resetting them.
+		const { config: fresh, warnings } = readConfig();
+		sttEngine = fresh.sttEngine;
+		whisperModel = fresh.whisperModel;
+		ttsEngine = fresh.ttsEngine;
+		qwenVoice = fresh.qwenVoice;
+		for (const w of warnings) ctx.ui.notify(`picrophone config: ${w}`, "warning");
 		setState("listening", ctx);
 		ctx.ui.setStatus("picrophone", "🎙 starting…");
 		if (sttEngine === "whisper") {

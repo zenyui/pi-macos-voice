@@ -1,9 +1,36 @@
 # Configuration
 
+## Config file
+
+Voice-mode settings live in `~/.pi/agent/pivoice.json`. Edit it directly (or use
+the `/voice-stt` / `/voice-tts` commands). Changes are picked up the next time
+voice mode starts (`/voice`), which also validates the file and warns about any
+invalid values (falling back to the default for that field).
+
+```json
+{
+  "version": 1,
+  "sttEngine": "whisper",
+  "whisperModel": "base.en",
+  "ttsEngine": "av",
+  "qwenVoice": "aiden"
+}
+```
+
+| Field | Values | Default | Notes |
+| --- | --- | --- | --- |
+| `sttEngine` | `whisper` \| `apple` | `whisper` | Dictation back-end. |
+| `whisperModel` | `tiny.en`, `base.en`, `small.en`, `large-v3-turbo`, … | `base.en` | Only used when `sttEngine` is `whisper`. |
+| `ttsEngine` | `auto` \| `av` \| `say` \| `qwen` | `av` | Read-aloud back-end. |
+| `qwenVoice` | `ryan`, `aiden`, `serena`, `vivian`, `eric`, `dylan`, `sohee`, `ono-anna`, `uncle-fu` | `aiden` | Only used when `ttsEngine` is `qwen`. |
+
+See [engines](engines.md) for what each engine does.
+
+## Internal CLI flags
+
 The `picrophone` binary is an internal helper — the extension drives it and
-sets these flags for you. You don't call it directly; configure voice mode with
-the `/voice-stt` and `/voice-tts` commands (see [engines](engines.md)). This
-page is a reference for the flags the extension passes.
+sets these flags for you. You don't call it directly. This section is a
+reference for the flags the extension passes.
 
 ## `stt`
 
