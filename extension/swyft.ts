@@ -63,7 +63,8 @@ export function getVersion(): Promise<SwyftVersion> {
 /**
  * Speak text aloud. Returns a handle whose .kill() supports barge-in.
  * `engine` defaults to swyft's own `auto` (best available for the macOS
- * version); pass "av" | "say" | "neural" to force one.
+ * version); pass "av" | "say" | "qwen" to force one. For "qwen", `voiceId`
+ * is a Qwen3 speaker id (e.g. "ryan", "serena"), not an AVSpeechSynthesisVoice.
  */
 export function speak(
 	text: string,

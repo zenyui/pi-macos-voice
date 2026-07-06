@@ -14,7 +14,7 @@ voice, and have its replies read back to you — fully on-device.
   (OpenAI's model on Core ML / the Neural Engine).
 - **Read-aloud (TTS):** the agent's replies are spoken back via native macOS voices.
 - **Pluggable engines:** STT and TTS both sit behind a common protocol, so
-  swapping providers is a one-line change (`/voice-engine apple|whisper`).
+  swapping providers is a one-line change (`/voice-stt apple|whisper`).
 - **Interrupt anytime:** say "stop" (or "shut up") to cut off a reply.
 - **Mute/unmute:** say "mute" to pause listening, "unmute" to resume.
 - **Thinking sound:** a soft ambient tone plays while the agent works.
@@ -155,9 +155,25 @@ for both:
   `~/Library/Caches/pi-macos-voice`). Better accuracy on accents/jargon; warm
   transcription is sub-second on Apple Silicon.
 
-Switch with **`/voice-engine apple`** or **`/voice-engine whisper [model]`**
+Switch with **`/voice-stt apple`** or **`/voice-stt whisper [model]`**
 (persisted). Models: `tiny.en`, `base.en`, `small.en`, `large-v3-turbo`, … —
 smaller is faster, larger is more accurate. Restart voice mode to apply.
+
+## TTS engines
+
+Read-aloud has three back-ends. Switch with **`/voice-tts auto|av|say|qwen`**
+(persisted, applies immediately):
+
+- **`av`** (default) — `AVSpeechSynthesizer` with the best installed English
+  voice (add enhanced/premium voices in System Settings › Accessibility ›
+  Spoken Content). Snappy, killable mid-utterance for clean barge-in.
+- **`say`** — `/usr/bin/say`, the always-present fallback.
+- **`qwen`** — on-device Qwen3-TTS via WhisperKit's `TTSKit` (Core ML / the
+  Neural Engine). Model downloads on first use (cached under
+  `~/Library/Caches/pi-macos-voice`). Pass a speaker as a second arg, e.g.
+  **`/voice-tts qwen aiden`** (speakers: `ryan`, `aiden`, `serena`, `vivian`,
+  `eric`, `dylan`, `sohee`, `ono-anna`, `uncle-fu`; only `ryan`/`aiden` are
+  native English). Higher quality but slow to synthesize — not the default.
 
 ## Configuration
 

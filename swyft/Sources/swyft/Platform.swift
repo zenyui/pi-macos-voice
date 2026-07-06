@@ -26,6 +26,9 @@ enum TTSEngine: String, CaseIterable {
     /// New on-device neural speech model. Reserved for the macOS release that
     /// exposes it — see `neuralTTSAvailable()`. Not wired up yet.
     case neural
+    /// On-device Qwen3-TTS via WhisperKit's TTSKit (Core ML / ANE). Works on
+    /// macOS 13+. Opt-in (needs a model download); never auto-preferred.
+    case qwen
     /// AVSpeechSynthesizer — in-process system voices (enhanced/premium if the
     /// user installed them). Killable mid-utterance for clean barge-in.
     case av
@@ -51,8 +54,12 @@ func neuralTTSAvailable() -> Bool {
 func availableTTSEngines() -> [TTSEngine] {
     var engines: [TTSEngine] = []
     if neuralTTSAvailable() { engines.append(.neural) }
+    // Qwen is always usable (macOS 13+) but requires an explicit `--engine
+    // qwen`, so it sits after the zero-setup engines and is never the `auto`
+    // pick.
     engines.append(.av)
     engines.append(.say)
+    engines.append(.qwen)
     return engines
 }
 

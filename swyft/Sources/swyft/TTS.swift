@@ -1,4 +1,5 @@
 import AVFoundation
+import TTSKit
 
 // Text-to-speech. Engines (see Platform.swift for availability/selection):
 //   --engine auto (default) pick the best available for this macOS version.
@@ -130,6 +131,64 @@ private func speakNeural(_ text: String, voiceId: String?, rate: Float?) -> Neve
     speakAV(text, voiceId: voiceId, rate: rate)
 }
 
+// Cache dir for downloaded Qwen3-TTS Core ML models. Matches WhisperSTT's
+// `modelBaseDir()` so all model weights live under one place.
+private func qwenModelBaseDir() -> URL {
+    let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSTemporaryDirectory())
+    let dir = base.appendingPathComponent("pi-macos-voice", isDirectory: true)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir
+}
+
+// Resolve a `--voice` value to a Qwen3 speaker, defaulting to a clear English
+// voice. Accepts the raw speaker id (e.g. "ryan", "serena", "uncle-fu").
+private func resolveQwenSpeaker(_ voiceId: String?) -> Qwen3Speaker {
+    if let voiceId, let s = Qwen3Speaker(rawValue: voiceId.lowercased()) { return s }
+    return .aiden
+}
+
+// On-device Qwen3-TTS via WhisperKit's TTSKit. Downloads + loads the model on
+// first use (progress logged), then streams synthesized audio. Killed on
+// SIGTERM/SIGINT for barge-in, same as speakAV.
+private func speakQwen(_ text: String, voiceId: String?, rate: Float?) -> Never {
+    installExitOnSignal()
+    let speaker = resolveQwenSpeaker(voiceId)
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        do {
+            let base = qwenModelBaseDir()
+            debugLog("qwen tts: resolving model (speaker=\(speaker.rawValue))")
+            let folder = try await TTSKit.download(downloadBase: base) { progress in
+                debugLog("qwen tts: downloading \(Int(progress.fractionCompleted * 100))%")
+            }
+            let config = TTSKitConfig(
+                modelFolder: folder,
+                verbose: false,
+                logLevel: .error,
+                download: false,
+                load: true
+            )
+            debugLog("qwen tts: loading model from \(folder.path)")
+            let tts = try await TTSKit(config)
+            debugLog("qwen tts: model loaded; synthesizing \(text.count) chars")
+            let result = try await tts.play(
+                text: text,
+                speaker: speaker,
+                language: .english
+            )
+            debugLog("qwen tts: done (\(result.audio.count) samples)")
+            sem.signal()
+        } catch {
+            debugLog("qwen tts failed: \(error.localizedDescription); falling back to AV")
+            sem.signal()
+            speakAV(text, voiceId: nil, rate: rate)
+        }
+    }
+    sem.wait()
+    exit(0)
+}
+
 func runTTS(_ args: [String]) -> Never {
     var engine = "auto"
     var voiceId: String?
@@ -160,6 +219,8 @@ func runTTS(_ args: [String]) -> Never {
         speakSay(text, voiceId: voiceId, rate: rateArg.flatMap { Int($0) })
     case .neural:
         speakNeural(text, voiceId: voiceId, rate: rateArg.flatMap { Float($0) })
+    case .qwen:
+        speakQwen(text, voiceId: voiceId, rate: rateArg.flatMap { Float($0) })
     case .av:
         speakAV(text, voiceId: voiceId, rate: rateArg.flatMap { Float($0) })
     }
