@@ -28,7 +28,8 @@
     "build:app": "bash scripts/build-app.sh",
     "build:cues": "node scripts/bake-cues.mjs",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf native/.build packages/picrophone-darwin/bin/picrophone packages/picrophone-darwin/bin/Picrophone.app native/Sources/picrophone/Version.swift"
+    "clean": "rm -rf native/.build packages/picrophone-darwin/bin/picrophone packages/picrophone-darwin/bin/Picrophone.app native/Sources/picrophone/Version.swift",
+    "publish:all": "bash scripts/publish.sh"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.80.3",
