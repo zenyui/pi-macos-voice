@@ -6,6 +6,8 @@
 
 # picrophone
 
+[![npm version](https://img.shields.io/npm/v/picrophone.svg)](https://www.npmjs.com/package/picrophone)
+
 Talk to the [pi](https://github.com/earendil-works/pi) coding agent with your
 voice, and have its replies read back to you — fully on-device.
 
