@@ -1,5 +1,5 @@
-// Bake the swyft-synthesized hum + chime cues to WAV assets, reproducing the
-// exact DSP from swyft/Sources/swyft/Hum.swift and Chime.swift so the baked
+// Bake the picrophone-synthesized hum + chime cues to WAV assets, reproducing the
+// exact DSP from native/Sources/picrophone/Hum.swift and Chime.swift so the baked
 // sound matches the live one byte-for-ear. Run: node scripts/bake-cues.mjs
 // Output: assets/hum.wav (one loopable pulse cycle) + assets/chime-*.wav.
 

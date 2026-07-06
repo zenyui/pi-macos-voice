@@ -1,5 +1,5 @@
 {
-  "name": "pi-macos-voice",
+  "name": "picrophone",
   "version": "0.7.1",
   "description": "Native macOS dictation + text-to-speech bridge for the pi coding agent.",
   "type": "module",
@@ -10,13 +10,13 @@
   },
   "scripts": {
     "gen-version": "node scripts/gen-version.mjs",
-    "build:swift": "swift build --package-path swyft -c release",
+    "build:swift": "swift build --package-path native -c release",
     "build": "npm run gen-version && npm run build:swift && npm run install-bin && npm run build:app",
-    "install-bin": "mkdir -p bin && cp \"$(swift build --package-path swyft -c release --show-bin-path)/swyft\" bin/swyft && chmod +x bin/swyft && codesign --force --sign - bin/swyft",
+    "install-bin": "mkdir -p bin && cp \"$(swift build --package-path native -c release --show-bin-path)/picrophone\" bin/picrophone && chmod +x bin/picrophone && codesign --force --sign - bin/picrophone",
     "build:app": "bash scripts/build-app.sh",
     "build:cues": "node scripts/bake-cues.mjs",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf swyft/.build bin/swyft bin/Swyft.app swyft/Sources/swyft/Version.swift"
+    "clean": "rm -rf native/.build bin/picrophone bin/Picrophone.app native/Sources/picrophone/Version.swift"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.80.3",

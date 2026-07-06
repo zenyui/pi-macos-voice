@@ -1,5 +1,5 @@
-// Local WhisperKit STT, wrapping `swyft stt --engine whisper` (macOS).
-// The whisper engine lives inside the swyft binary today (Swift, not a TS
+// Local WhisperKit STT, wrapping `picrophone stt --engine whisper` (macOS).
+// The whisper engine lives inside the picrophone binary today (Swift, not a TS
 // wrapper); this file is only the thin interface conformance + default model.
 
 import type { SttMessage, SttOptions, SttProvider, SttSession } from "../protocol";
@@ -15,7 +15,7 @@ export const whisperStt: SttProvider = {
 	readiness() {
 		return binariesExist()
 			? { available: true }
-			: { available: false, reason: "swyft binary/app missing — run `npm run build`." };
+			: { available: false, reason: "picrophone binary/app missing — run `npm run build`." };
 	},
 	start(onMessage: (msg: SttMessage) => void, opts: SttOptions = {}): SttSession {
 		return startStt(onMessage, {

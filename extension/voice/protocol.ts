@@ -1,7 +1,7 @@
 // Shared, transport-agnostic types + a tiny NDJSON socket read loop.
 //
 // Everything above the native layer speaks in these types. Providers wrap a
-// native helper (Swift swyft today, a Windows exe later) and translate its
+// native helper (Swift picrophone today, a Windows exe later) and translate its
 // wire format into these; the engine never sees a socket or NDJSON line.
 
 import type { Socket } from "node:net";

@@ -10,14 +10,14 @@ import { whisperStt } from "./stt/whisper";
 import { systemTts } from "./tts/system";
 import { qwenTts } from "./tts/qwen";
 import { wavCues } from "./cues/wav";
-import { swyftSynthCues } from "./cues/swyft-synth";
+import { synthCues } from "./cues/synth";
 
 const HOST: Platform = process.platform;
 
 // Registered providers, in preference order (first supported = default).
 const STT: SttProvider[] = [whisperStt, appleStt];
 const TTS: TtsProvider[] = [systemTts, qwenTts];
-const CUES: CuesProvider[] = [wavCues, swyftSynthCues];
+const CUES: CuesProvider[] = [wavCues, synthCues];
 
 interface HasSupport {
 	readonly id: string;

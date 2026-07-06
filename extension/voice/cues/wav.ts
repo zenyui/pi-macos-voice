@@ -1,7 +1,7 @@
 // Default, cross-platform cues: play baked WAV assets via the system player.
 // - macOS: `afplay`
 // - Windows: PowerShell System.Media.SoundPlayer (STUB path shape; verified later)
-// Removes hum/chime synthesis from swyft (and from any future native helper);
+// Removes hum/chime synthesis from picrophone (and from any future native helper);
 // the WAVs are baked from the original Swift DSP (scripts/bake-cues.mjs) so the
 // sound is unchanged.
 

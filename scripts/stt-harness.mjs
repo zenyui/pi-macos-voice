@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// End-to-end STT socket test: create a unix socket, launch Swyft.app with
+// End-to-end STT socket test: create a unix socket, launch Picrophone.app with
 // --socket, print received NDJSON, forward "stop" on SIGINT.
 //
 //   node scripts/stt-harness.mjs        # listens ~30s, speak into the mic
@@ -13,8 +13,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const app = join(root, "bin/Swyft.app");
-const sockPath = `/tmp/swyft-stt-${process.pid}.sock`;
+const app = join(root, "bin/Picrophone.app");
+const sockPath = `/tmp/picrophone-stt-${process.pid}.sock`;
 
 if (existsSync(sockPath)) unlinkSync(sockPath);
 
@@ -22,7 +22,7 @@ let conn = null;
 
 const server = createServer((socket) => {
   conn = socket;
-  console.error("[harness] Swyft.app connected");
+  console.error("[harness] Picrophone.app connected");
   let buf = "";
   socket.on("data", (chunk) => {
     buf += chunk.toString("utf8");
@@ -43,7 +43,7 @@ const server = createServer((socket) => {
 });
 
 server.listen(sockPath, () => {
-  console.error(`[harness] listening on ${sockPath}, launching Swyft.app...`);
+  console.error(`[harness] listening on ${sockPath}, launching Picrophone.app...`);
   const child = spawn("open", ["-n", app, "--args", "stt", "--socket", sockPath], {
     stdio: "inherit",
   });

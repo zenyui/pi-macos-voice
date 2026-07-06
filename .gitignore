@@ -1,9 +1,9 @@
 .DS_Store
 .build/
-swyft/.build/
+native/.build/
 DerivedData/
 *.xcuserstate
 node_modules/
 
 # Generated build artifacts
-swyft/Sources/swyft/Version.swift
+native/Sources/picrophone/Version.swift
