@@ -63,7 +63,13 @@ final class WhisperListener: STTListener {
                 // step — compiles the model for this chip, cached by the OS after).
                 emit(["type": "progress", "message": "preparing '\(self.modelName)' (compiling for this Mac)…"])
                 let config = WhisperKitConfig(
+                    downloadBase: base,
                     modelFolder: folder.path,
+                    // Route the tokenizer/vocab download into our cache dir too.
+                    // Without this, WhisperKit's Hub defaults to
+                    // ~/Documents/huggingface, which trips macOS's Documents-folder
+                    // TCC prompt and scatters files outside the cache.
+                    tokenizerFolder: base,
                     verbose: false,
                     logLevel: .error,
                     prewarm: false,

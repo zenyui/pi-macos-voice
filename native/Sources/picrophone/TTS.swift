@@ -1,5 +1,6 @@
 import AVFoundation
 import TTSKit
+import Hub
 
 // Text-to-speech. Engines (see Platform.swift for availability/selection):
 //   --engine auto (default) pick the best available for this macOS version.
@@ -141,6 +142,18 @@ private func qwenModelBaseDir() -> URL {
     return dir
 }
 
+// Download the Qwen3 tokenizer repo into our cache dir (base) and return the
+// local folder holding tokenizer.json. Uses a cache-scoped HubApi so the files
+// land under ~/Library/Caches/picrophone instead of ~/Documents/huggingface.
+private func fetchQwenTokenizer(base: URL) async throws -> URL {
+    let hub = HubApi(downloadBase: base)
+    // Grab just the tokenizer/config JSON + merges/vocab; skip model weights.
+    return try await hub.snapshot(
+        from: Qwen3TTSConstants.defaultTokenizerRepo,
+        matching: ["*.json", "*.txt"]
+    ) { _ in }
+}
+
 // Resolve a `--voice` value to a Qwen3 speaker, defaulting to a clear English
 // voice. Accepts the raw speaker id (e.g. "ryan", "serena", "uncle-fu").
 private func resolveQwenSpeaker(_ voiceId: String?) -> Qwen3Speaker {
@@ -162,8 +175,17 @@ private func speakQwen(_ text: String, voiceId: String?, rate: Float?) -> Never 
             let folder = try await TTSKit.download(downloadBase: base) { progress in
                 debugLog("qwen tts: downloading \(Int(progress.fractionCompleted * 100))%")
             }
+            // Pre-fetch the Qwen tokenizer repo INTO our cache dir and hand TTSKit
+            // the resulting local folder. TTSKit treats `tokenizerFolder` as a
+            // local path (loads directly if it holds tokenizer.json, else falls
+            // back to a Hub download at ~/Documents/huggingface — the Documents
+            // TCC prompt). Downloading it here via a cache-scoped HubApi keeps
+            // everything under ~/Library/Caches and avoids the prompt.
+            let tokenizerFolder = try await fetchQwenTokenizer(base: base)
             let config = TTSKitConfig(
                 modelFolder: folder,
+                downloadBase: base,
+                tokenizerFolder: tokenizerFolder,
                 verbose: false,
                 logLevel: .error,
                 download: false,
