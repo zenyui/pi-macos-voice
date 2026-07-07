@@ -1,7 +1,7 @@
 import { CONFIG_DIR_NAME, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
-import { Check } from "typebox/value";
+import { Check, Errors } from "typebox/value";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -67,29 +67,81 @@ const DEFAULT_CONFIG: VoiceConfig = {
 // Backend id mappings used at the native boundary.
 const whisperModelId = (m: WhisperModel): string => WHISPER_MODELS[m];
 
+// Result of reading the config. `problem` is set when the file exists but is
+// broken (unparseable or fails schema), and carries a detailed report — meant
+// to be handed to the agent so it can fix the file (it has the JSON Schema and
+// the per-field errors to work from).
+interface ReadResult {
+	config: VoiceConfig;
+	problem: { summary: string; report: string } | null;
+}
+
 // Read + validate the on-disk config, all-or-nothing: if the file is missing,
-// unparseable, or fails the schema, fall back to defaults and (when it exists
-// but is invalid) return a warning so callers can surface it.
-function readConfig(): { config: VoiceConfig; warnings: string[] } {
+// unparseable, or fails the schema, fall back to defaults. A missing file is
+// not a problem; a present-but-invalid file is.
+function readConfig(): ReadResult {
+	let text: string;
+	try {
+		text = readFileSync(CONFIG_PATH, "utf8");
+	} catch {
+		return { config: structuredClone(DEFAULT_CONFIG), problem: null };
+	}
 	let raw: unknown;
 	try {
-		raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
-	} catch {
-		return { config: structuredClone(DEFAULT_CONFIG), warnings: [] };
-	}
-	if (!Check(ConfigSchema, raw)) {
+		raw = JSON.parse(text);
+	} catch (e) {
 		return {
 			config: structuredClone(DEFAULT_CONFIG),
-			warnings: [`${CONFIG_PATH} is invalid; using defaults. Fix it and restart voice mode.`],
+			problem: {
+				summary: `${CONFIG_PATH} is not valid JSON; using defaults.`,
+				report: configFixReport(text, [`JSON parse error: ${(e as Error).message}`]),
+			},
+		};
+	}
+	if (!Check(ConfigSchema, raw)) {
+		const issues = [...Errors(ConfigSchema, raw)].map((err) => {
+			const at = err.instancePath || "(root)";
+			const allowed = (err.params as { allowedValues?: unknown[] })?.allowedValues;
+			return allowed ? `${at}: ${err.message} (${allowed.join(", ")})` : `${at}: ${err.message}`;
+		});
+		return {
+			config: structuredClone(DEFAULT_CONFIG),
+			problem: {
+				summary: `${CONFIG_PATH} is invalid; using defaults. ${issues.length} issue(s).`,
+				report: configFixReport(text, issues),
+			},
 		};
 	}
 	const { version, ...cfg } = raw;
-	return { config: cfg, warnings: [] };
+	return { config: cfg, problem: null };
+}
+
+// Build a self-contained report the agent can act on: the errors, the current
+// (invalid) file, and the JSON Schema describing the valid shape.
+function configFixReport(fileText: string, issues: string[]): string {
+	return [
+		`The picrophone voice config at ${CONFIG_PATH} is invalid, so defaults are in use.`,
+		"Please fix the file so it matches the schema, then tell the user to restart voice mode (/voice off, then on).",
+		"",
+		"Validation errors:",
+		...issues.map((i) => `- ${i}`),
+		"",
+		"Current file contents:",
+		"```json",
+		fileText.trim(),
+		"```",
+		"",
+		"JSON Schema it must satisfy:",
+		"```json",
+		JSON.stringify(ConfigSchema, null, 2),
+		"```",
+	].join("\n");
 }
 
 function loadConfig(): VoiceConfig {
 	return readConfig().config;
 }
+
 function saveConfig(cfg: VoiceConfig): void {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
@@ -378,9 +430,13 @@ export default function (pi: ExtensionAPI) {
 		// Re-read the config file so edits made since startup (e.g. by the agent
 		// editing picrophone.json directly) take effect, and surface any invalid
 		// values instead of silently resetting them.
-		const { config: fresh, warnings } = readConfig();
+		const { config: fresh, problem } = readConfig();
 		cfg = fresh;
-		for (const w of warnings) ctx.ui.notify(`picrophone config: ${w}`, "warning");
+		if (problem) {
+			ctx.ui.notify(`picrophone config: ${problem.summary}`, "warning");
+			// Hand the schema + errors to the agent so it can repair the file.
+			if (ctx.isIdle()) pi.sendUserMessage(problem.report);
+		}
 		setState("listening", ctx);
 		ctx.ui.setStatus("picrophone", "🎙 starting…");
 		if (cfg.stt.engine === "whisper") {
