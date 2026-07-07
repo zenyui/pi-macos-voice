@@ -1,6 +1,6 @@
 {
   "name": "picrophone",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "On-device dictation + text-to-speech bridge for the pi coding agent (macOS; Windows coming soon).",
   "type": "module",
   "keywords": [

@@ -175,7 +175,7 @@ const VOICE_MODE_PROMPT = [
 ].join(" ");
 
 // Prefix on auto-sent transcripts so the model (and user) can tell it was spoken.
-const MIC_PREFIX = "🎙 ";
+const MIC_PREFIX = "🎙  ";
 
 // Spoken interrupt words. Two match modes:
 // - strict (normal listening): the WHOLE utterance must be a stop word, so
@@ -269,21 +269,33 @@ export default function (pi: ExtensionAPI) {
 		return `(tts: ${cfg.tts.engine}, stt: ${cfg.stt.engine})`;
 	}
 
-	function statusFor(): string {
+	// Single source of truth for the picrophone widget (above the editor). The
+	// live partial transcription and whisper first-run progress take priority
+	// over the steady-state line; when voice is off the widget is cleared.
+	let partial = ""; // in-progress STT transcription (partial), shown while talking
+	let downloadMsg = ""; // whisper model download/compile progress
+
+	function renderWidget(): string[] {
+		if (state === "off") return [];
+		if (partial) return [`🎙  ${partial}`];
+		if (downloadMsg) return [`🎙  ${downloadMsg}`];
 		let base: string;
 		switch (state) {
-			case "off": return "";
-			case "thinking": base = "🎙 thinking"; break;
-			case "speaking": base = "🎙 speaking"; break;
-			default: base = micMuted ? "🔇 muted" : "🎙 on"; break;
+			case "thinking": base = "🎙  thinking"; break;
+			case "speaking": base = "🎙  speaking"; break;
+			default: base = micMuted ? "🔇  muted" : "🎙  on"; break;
 		}
-		return `${base} ${engineInfo()}`;
+		return [`${base} ${engineInfo()}`];
+	}
+
+	function updateWidget(ctx: ExtensionContext) {
+		ctx.ui.setWidget("picrophone", renderWidget());
 	}
 
 	function setState(next: VoiceState, ctx: ExtensionContext) {
 		const prev = state;
 		state = next;
-		ctx.ui.setStatus("picrophone", statusFor());
+		updateWidget(ctx);
 		// Play a short earcon when we hand the turn back to the user (finished
 		// thinking/speaking). Fires within the TTS mute tail, so it isn't
 		// re-transcribed as input.
@@ -299,8 +311,8 @@ export default function (pi: ExtensionAPI) {
 	function setMicMuted(on: boolean, ctx: ExtensionContext) {
 		if (micMuted === on) return;
 		micMuted = on;
-		ctx.ui.setWidget("picrophone", []);
-		ctx.ui.setStatus("picrophone", statusFor());
+		partial = "";
+		updateWidget(ctx);
 		ctx.ui.notify(on ? 'Mic muted — say "unmute" to resume.' : "Mic live.", "info");
 		playChime(on ? "down" : "bloop");
 	}
@@ -376,14 +388,17 @@ export default function (pi: ExtensionAPI) {
 		clearSpeakQueue();
 		stopHum();
 		if (!ctx.isIdle()) ctx.abort();
-		ctx.ui.setWidget("picrophone", []);
+		partial = "";
 		if (state !== "off") setState("listening", ctx);
+		else updateWidget(ctx);
 	}
 
 	function handleStt(msg: SttMessage, ctx: ExtensionContext) {
 		switch (msg.type) {
 			case "ready":
+				downloadMsg = "";
 				if (state !== "thinking" && state !== "speaking") setState("listening", ctx);
+				else updateWidget(ctx);
 				break;
 			case "partial": {
 				// While muted, ignore partials entirely. Unmute is handled on the
@@ -395,11 +410,13 @@ export default function (pi: ExtensionAPI) {
 					break;
 				}
 				if (muted) break; // ignore our own TTS echo; only a stop word is heard
-				ctx.ui.setWidget("picrophone", [`🎙 ${msg.text}`]);
+				partial = msg.text;
+				updateWidget(ctx);
 				break;
 			}
 			case "final": {
-				ctx.ui.setWidget("picrophone", []);
+				partial = "";
+				updateWidget(ctx);
 				const text = msg.text.trim();
 				if (!text) break;
 				// Unmute is always allowed (even while muted), final-only.
@@ -433,9 +450,10 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`picrophone: ${msg.message}`, "warning");
 				break;
 			case "progress":
-				// Model download/compile status (whisper first run). Show it live in
-				// the footer rather than as stacked notifications.
-				ctx.ui.setStatus("picrophone", `🎙 ${msg.message}`);
+				// Model download/compile progress (whisper first run). Show it live in
+				// the widget rather than as stacked notifications.
+				downloadMsg = msg.message;
+				updateWidget(ctx);
 				break;
 		}
 	}
@@ -452,8 +470,8 @@ export default function (pi: ExtensionAPI) {
 			// Hand the schema + errors to the agent so it can repair the file.
 			if (ctx.isIdle()) pi.sendUserMessage(problem.report);
 		}
+		downloadMsg = "starting…";
 		setState("listening", ctx);
-		ctx.ui.setStatus("picrophone", "🎙 starting…");
 		if (cfg.stt.engine === "whisper") {
 			ctx.ui.notify(
 				`Voice STT: whisper (${cfg.stt.whisper.model}). First run downloads the model ` +
@@ -478,9 +496,10 @@ export default function (pi: ExtensionAPI) {
 		stt?.stop();
 		stt = null;
 		micMuted = false;
+		partial = "";
+		downloadMsg = "";
 		stopHum();
 		clearSpeakQueue();
-		ctx.ui.setWidget("picrophone", []);
 		setState("off", ctx);
 	}
 
