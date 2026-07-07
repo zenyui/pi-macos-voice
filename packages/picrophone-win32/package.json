@@ -1,6 +1,6 @@
 {
   "name": "picrophone-win32",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Windows native binary for picrophone (coming soon).",
   "os": [
     "win32"
