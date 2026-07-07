@@ -1,6 +1,6 @@
 {
   "name": "picrophone-darwin",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "macOS (universal) native binary + app bundle for picrophone.",
   "os": [
     "darwin"
