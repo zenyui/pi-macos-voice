@@ -15,10 +15,11 @@ produces a **universal** (arm64 + x86_64) binary by compiling each arch
 separately and merging them with `lipo` — this works with the Command Line
 Tools alone (the combined `--arch a --arch b` invocation would need full Xcode).
 
-Load the local copy without installing the package:
+Load the local copy without installing the package. `-ne` disables installed
+extensions so an installed `picrophone` package doesn't clash with the checkout:
 
 ```sh
-pi -e /absolute/path/to/picrophone/extension/index.ts
+pi -ne -e ./extension/index.ts
 ```
 
 The committed universal `picrophone` binary and `Picrophone.app` live in

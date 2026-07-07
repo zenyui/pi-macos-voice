@@ -29,7 +29,9 @@ How the pieces fit together.
 - **`extension/`** (TypeScript) — the brain. An event-driven state machine
   (`off / listening / thinking / speaking`, no polling loop) reacts to pi
   lifecycle events and the transcript stream: sends dictation as prompts, reads
-  replies through a **speak queue** (so replies never overlap), plays the hum
+  replies through a **speak queue** (so replies never overlap), streams the
+  reply aloud sentence-by-sentence as it's generated (buffering deltas and
+  flushing on sentence boundaries, holding partial code fences), plays the hum
   while thinking, mutes self-echo while speaking, and handles stop words.
 
 ## Pluggable engines

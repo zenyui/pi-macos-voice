@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { toSpeakable } from "./speakable";
+import { SentenceStreamer } from "./stream-speech";
 import { binariesExist, getVersion } from "./voice/native/mac";
 import { registry, isError } from "./voice/registry";
 import type { CueStyle, SpeakHandle, SttMessage, SttSession } from "./voice/protocol";
@@ -247,6 +248,15 @@ export default function (pi: ExtensionAPI) {
 	let speaking: { kill: () => void } | null = null;
 	let speakGen = 0; // guards the post-playback echo-flush timer
 	const speakQueue: string[] = [];
+	// Streaming read-aloud: assistant text is spoken sentence-by-sentence as it
+	// arrives, instead of waiting for agent_end. `generating` is true for the
+	// duration of an agent loop so the queue draining between sentences doesn't
+	// prematurely hand the turn back (chime) mid-reply. `streamedTurn` records
+	// whether we spoke anything from the stream, so agent_end can fall back to
+	// the full-text path if no deltas were delivered.
+	const streamer = new SentenceStreamer();
+	let generating = false;
+	let streamedTurn = false;
 	// While reading aloud (plus a short tail) the mic hears our own TTS, so we
 	// suppress input except the stop word to avoid a self-talk feedback loop.
 	let suppressInputUntil = 0;
@@ -306,10 +316,14 @@ export default function (pi: ExtensionAPI) {
 	function drainSpeak(ctx: ExtensionContext) {
 		const next = speakQueue.shift();
 		if (next === undefined) {
-			if (state === "speaking") setState("listening", ctx);
+			// Queue empty. Mid-generation we keep the "speaking" state so the gap
+			// between sentences isn't treated as the end of the turn (no chime, no
+			// premature listening). Only revert once the agent loop has finished.
+			if (!generating && state === "speaking") setState("listening", ctx);
 			return;
 		}
 		if (state !== "speaking") setState("speaking", ctx);
+		stopHum(); // reading aloud takes over from the thinking sound
 		// For Qwen, --voice selects a Qwen3 speaker; the system engines (av/say)
 		// use their own built-in default voice.
 		const s = speakNow(next, ctx);
@@ -341,6 +355,7 @@ export default function (pi: ExtensionAPI) {
 	// Flush queued + active readback (stop word, new turn, voice off).
 	function clearSpeakQueue() {
 		speakQueue.length = 0;
+		streamer.reset();
 		speaking?.kill();
 		speaking = null;
 		suppressInputUntil = Date.now() + TTS_TAIL_MS;
@@ -501,23 +516,61 @@ export default function (pi: ExtensionAPI) {
 	pi.on("agent_start", async (_event, ctx) => {
 		if (!voiceOn()) return;
 		clearSpeakQueue(); // new turn: drop any leftover readback
+		generating = true;
+		streamedTurn = false;
 		setState("thinking", ctx);
 		if (!humming) humming = cues?.hum() ?? null;
 	});
 
-	pi.on("agent_end", async (event, ctx) => {
-		stopHum(); // done thinking
+	// Stream read-aloud: as assistant text arrives, flush complete sentences into
+	// the speak queue so playback starts before the reply is finished.
+	pi.on("message_update", async (event, ctx) => {
 		if (!voiceOn()) return;
-		// Speak the final assistant text of this prompt (queued, never overlapping).
-		const assistant = [...event.messages].reverse().find((m) => m.role === "assistant");
-		if (assistant) {
-			const text = assistant.content
-				.filter((c): c is { type: "text"; text: string } => c.type === "text")
-				.map((c) => c.text)
-				.join("\n");
-			enqueueSpeak(text, ctx);
+		const e = event.assistantMessageEvent;
+		if (e.type !== "text_delta") return;
+		for (const chunk of streamer.push(e.delta)) {
+			streamedTurn = true;
+			enqueueSpeak(chunk, ctx);
 		}
-		if (state === "thinking") setState("listening", ctx); // nothing to speak
+	});
+
+	// End of an assistant message (there may be several per loop, split by tool
+	// calls): flush whatever sentence fragment is still buffered.
+	pi.on("message_end", async (event, ctx) => {
+		if (!voiceOn() || event.message.role !== "assistant") return;
+		for (const chunk of streamer.flush()) {
+			streamedTurn = true;
+			enqueueSpeak(chunk, ctx);
+		}
+	});
+
+	pi.on("agent_end", async (event, ctx) => {
+		generating = false;
+		if (!voiceOn()) {
+			stopHum();
+			return;
+		}
+		// Drain any straggler fragment, then fall back to speaking the full reply
+		// only if streaming delivered nothing (e.g. deltas weren't emitted).
+		for (const chunk of streamer.flush()) {
+			streamedTurn = true;
+			enqueueSpeak(chunk, ctx);
+		}
+		if (!streamedTurn) {
+			const assistant = [...event.messages].reverse().find((m) => m.role === "assistant");
+			if (assistant) {
+				const text = assistant.content
+					.filter((c): c is { type: "text"; text: string } => c.type === "text")
+					.map((c) => c.text)
+					.join("\n");
+				enqueueSpeak(text, ctx);
+			}
+		}
+		// Nothing queued or playing: done thinking, hand the turn back now.
+		if (!speaking && speakQueue.length === 0) {
+			stopHum();
+			if (state !== "listening") setState("listening", ctx);
+		}
 	});
 
 	pi.registerCommand("voice", {
