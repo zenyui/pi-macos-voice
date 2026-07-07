@@ -3,10 +3,12 @@
 Dictation (STT) and read-aloud (TTS) each have interchangeable back-ends. All run
 on-device.
 
+Set the active engine (and its options) in the [config file](configuration.md);
+changes apply on the next `/voice` start.
+
 ## STT (dictation)
 
-Switch with **`/voice-stt apple`** or **`/voice-stt whisper [model]`** (persisted;
-restart voice mode to apply).
+Set `stt.engine` and `stt.whisper.model` in the config.
 
 | Engine | Notes |
 | --- | --- |
@@ -15,12 +17,11 @@ restart voice mode to apply).
 
 **Whisper models** (download on first use, cached under
 `~/Library/Caches/picrophone`) — smaller is faster, larger is more accurate:
-`tiny.en`, `base.en` (default), `small.en`, `large-v3-turbo`, …
+`tiny`, `base` (default), `small`, `large`.
 
 ## TTS (read-aloud)
 
-Switch with **`/voice-tts auto|av|say|qwen [speaker]`** (persisted, applies
-immediately).
+Set `tts.engine` and `tts.qwen.voice` in the config.
 
 | Engine | Notes |
 | --- | --- |
@@ -29,6 +30,6 @@ immediately).
 | **`qwen`** | On-device Qwen3-TTS via WhisperKit's `TTSKit`. Higher quality but slow to synthesize. Model downloads on first use. |
 | **`auto`** | Picks the best engine for your macOS version. |
 
-**Qwen speakers** — pass as a second arg, e.g. `/voice-tts qwen aiden`:
+**Qwen speakers** — set `tts.qwen.voice`:
 `ryan`, `aiden`, `serena`, `vivian`, `eric`, `dylan`, `sohee`, `ono-anna`,
 `uncle-fu` (only `ryan`/`aiden` are native English).

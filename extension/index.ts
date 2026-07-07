@@ -1,7 +1,8 @@
 import { CONFIG_DIR_NAME, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { Type, type Static } from "typebox";
+import { Check, Errors } from "typebox/value";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -15,63 +16,136 @@ import { DEFAULT_QWEN_VOICE } from "./voice/tts/qwen";
 // Persisted engine preferences (STT + TTS). Each TTS provider has its own
 // built-in default voice; there is no per-voice picker. Lives outside the repo
 // so it survives rebuilds.
-const CONFIG_PATH = join(homedir(), CONFIG_DIR_NAME, "agent", "pivoice.json");
-// Bump when the on-disk shape changes incompatibly; loadConfig ignores configs
-// with a newer/unknown version so an old build won't misread a future format.
-const CONFIG_VERSION = 1;
-// STT engine: "whisper" (local WhisperKit / Core ML, default) or "apple"
-// (native SFSpeechRecognizer). Persisted so the choice survives restarts.
-type SttEngine = "apple" | "whisper";
-// Read-aloud engine: "auto" (system default, best of av/say), or an explicit
-// backend. "qwen" runs on-device Qwen3-TTS via WhisperKit's TTSKit.
-type TtsEngine = "auto" | "av" | "say" | "qwen";
-interface VoiceConfig {
-	sttEngine: SttEngine;
-	whisperModel: string;
-	ttsEngine: TtsEngine;
-	// Qwen3 speaker id (e.g. ryan, serena) used when ttsEngine === "qwen".
-	qwenVoice: string;
+const CONFIG_PATH = join(homedir(), CONFIG_DIR_NAME, "agent", "picrophone.json");
+// Bump when the on-disk shape changes incompatibly. Config is validated
+// all-or-nothing; anything that doesn't match the schema falls back to defaults.
+const CONFIG_VERSION = 2;
+
+// Config uses our own explicit tokens for every field; we map them to the
+// backend identifiers (WhisperKit model names, Qwen speaker ids) on our side,
+// so the on-disk config stays stable even if a backend renames things.
+const STT_ENGINES = ["whisper", "apple"] as const;
+const TTS_ENGINES = ["auto", "av", "say", "qwen"] as const;
+// Whisper model token -> WhisperKit model id passed to the binary.
+const WHISPER_MODELS = {
+	tiny: "tiny.en",
+	base: "base.en",
+	small: "small.en",
+	large: "large-v3-turbo",
+} as const;
+const QWEN_SPEAKERS = [
+	"ryan", "aiden", "serena", "vivian", "eric", "dylan", "sohee", "ono-anna", "uncle-fu",
+] as const;
+
+type SttEngine = (typeof STT_ENGINES)[number];
+type TtsEngine = (typeof TTS_ENGINES)[number];
+type WhisperModel = keyof typeof WHISPER_MODELS;
+type QwenVoice = (typeof QWEN_SPEAKERS)[number];
+
+// Single source of truth for the on-disk shape AND the TypeScript type.
+// Nested per-section (stt / tts) with a sub-object per provider, so provider-
+// specific settings (e.g. whisper's model) live under that provider and new
+// ones can be added without disturbing the others.
+const ConfigSchema = Type.Object({
+	version: Type.Optional(Type.Number()),
+	stt: Type.Object({
+		engine: StringEnum(STT_ENGINES),
+		whisper: Type.Object({ model: StringEnum(Object.keys(WHISPER_MODELS) as WhisperModel[]) }),
+	}),
+	tts: Type.Object({
+		engine: StringEnum(TTS_ENGINES),
+		qwen: Type.Object({ voice: StringEnum(QWEN_SPEAKERS) }),
+	}),
+});
+type VoiceConfig = Omit<Static<typeof ConfigSchema>, "version">;
+
+const DEFAULT_CONFIG: VoiceConfig = {
+	stt: { engine: "whisper", whisper: { model: "base" } },
+	tts: { engine: "av", qwen: { voice: DEFAULT_QWEN_VOICE as QwenVoice } },
+};
+
+// Backend id mappings used at the native boundary.
+const whisperModelId = (m: WhisperModel): string => WHISPER_MODELS[m];
+
+// Result of reading the config. `problem` is set when the file exists but is
+// broken (unparseable or fails schema), and carries a detailed report — meant
+// to be handed to the agent so it can fix the file (it has the JSON Schema and
+// the per-field errors to work from).
+interface ReadResult {
+	config: VoiceConfig;
+	problem: { summary: string; report: string } | null;
 }
-function loadConfig(): VoiceConfig {
+
+// Read + validate the on-disk config, all-or-nothing: if the file is missing,
+// unparseable, or fails the schema, fall back to defaults. A missing file is
+// not a problem; a present-but-invalid file is.
+function readConfig(): ReadResult {
+	let text: string;
 	try {
-		const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
-		if (typeof cfg.version === "number" && cfg.version > CONFIG_VERSION) throw 0;
-		const tts: TtsEngine =
-			cfg.ttsEngine === "av" || cfg.ttsEngine === "say" || cfg.ttsEngine === "qwen"
-				? cfg.ttsEngine
-				: "av";
-		return {
-			sttEngine: cfg.sttEngine === "apple" ? "apple" : "whisper",
-			whisperModel: cfg.whisperModel || DEFAULT_WHISPER_MODEL,
-			ttsEngine: tts,
-			qwenVoice: cfg.qwenVoice || DEFAULT_QWEN_VOICE,
-		};
+		text = readFileSync(CONFIG_PATH, "utf8");
 	} catch {
+		return { config: structuredClone(DEFAULT_CONFIG), problem: null };
+	}
+	let raw: unknown;
+	try {
+		raw = JSON.parse(text);
+	} catch (e) {
 		return {
-			sttEngine: "whisper",
-			whisperModel: DEFAULT_WHISPER_MODEL,
-			ttsEngine: "av",
-			qwenVoice: DEFAULT_QWEN_VOICE,
+			config: structuredClone(DEFAULT_CONFIG),
+			problem: {
+				summary: `${CONFIG_PATH} is not valid JSON; using defaults.`,
+				report: configFixReport(text, [`JSON parse error: ${(e as Error).message}`]),
+			},
 		};
 	}
+	if (!Check(ConfigSchema, raw)) {
+		const issues = [...Errors(ConfigSchema, raw)].map((err) => {
+			const at = err.instancePath || "(root)";
+			const allowed = (err.params as { allowedValues?: unknown[] })?.allowedValues;
+			return allowed ? `${at}: ${err.message} (${allowed.join(", ")})` : `${at}: ${err.message}`;
+		});
+		return {
+			config: structuredClone(DEFAULT_CONFIG),
+			problem: {
+				summary: `${CONFIG_PATH} is invalid; using defaults. ${issues.length} issue(s).`,
+				report: configFixReport(text, issues),
+			},
+		};
+	}
+	const { version, ...cfg } = raw;
+	return { config: cfg, problem: null };
 }
+
+// Build a self-contained report the agent can act on: the errors, the current
+// (invalid) file, and the JSON Schema describing the valid shape.
+function configFixReport(fileText: string, issues: string[]): string {
+	return [
+		`The picrophone voice config at ${CONFIG_PATH} is invalid, so defaults are in use.`,
+		"Please fix the file so it matches the schema, then tell the user to restart voice mode (/voice off, then on).",
+		"",
+		"Validation errors:",
+		...issues.map((i) => `- ${i}`),
+		"",
+		"Current file contents:",
+		"```json",
+		fileText.trim(),
+		"```",
+		"",
+		"JSON Schema it must satisfy:",
+		"```json",
+		JSON.stringify(ConfigSchema, null, 2),
+		"```",
+	].join("\n");
+}
+
+function loadConfig(): VoiceConfig {
+	return readConfig().config;
+}
+
 function saveConfig(cfg: VoiceConfig): void {
 	try {
 		mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-		writeFileSync(
-			CONFIG_PATH,
-			JSON.stringify(
-				{
-					version: CONFIG_VERSION,
-					sttEngine: cfg.sttEngine,
-					whisperModel: cfg.whisperModel,
-					ttsEngine: cfg.ttsEngine,
-					qwenVoice: cfg.qwenVoice,
-				},
-				null,
-				2,
-			),
-		);
+		writeFileSync(CONFIG_PATH, JSON.stringify({ version: CONFIG_VERSION, ...cfg }, null, 2));
 	} catch {}
 }
 
@@ -141,12 +215,11 @@ export default function (pi: ExtensionAPI) {
 	let state: VoiceState = "off";
 	let stt: SttSession | null = null;
 	let ready = false; // binary present + version ok
-	const config = loadConfig();
-	let sttEngine: SttEngine = config.sttEngine; // apple | whisper
-	let whisperModel: string = config.whisperModel;
-	let ttsEngine: TtsEngine = config.ttsEngine; // auto | av | say | qwen
-	let qwenVoice: string = config.qwenVoice; // Qwen3 speaker id
-	const persist = () => saveConfig({ sttEngine, whisperModel, ttsEngine, qwenVoice });
+	let cfg: VoiceConfig = loadConfig();
+	// Seed the config file on first run so there's a documented, editable file on
+	// disk. Settings are changed by editing this file (or asking the agent to);
+	// changes apply on the next /voice start.
+	if (!existsSync(CONFIG_PATH)) saveConfig(cfg);
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
 
@@ -159,15 +232,15 @@ export default function (pi: ExtensionAPI) {
 	// "qwen" -> qwen provider (Qwen3 speaker id); everything else -> system
 	// provider with the engine hint ("auto" | "av" | "say").
 	function speakNow(text: string, ctx: ExtensionContext): SpeakHandle | null {
-		const id = ttsEngine === "qwen" ? "qwen" : "system";
+		const id = cfg.tts.engine === "qwen" ? "qwen" : "system";
 		const prov = registry.tts.get(id);
 		if (isError(prov)) {
 			ctx.ui.notify(`picrophone: ${prov.message}`, "error");
 			return null;
 		}
-		return ttsEngine === "qwen"
-			? prov.speak(text, { voiceId: qwenVoice })
-			: prov.speak(text, { engine: ttsEngine });
+		return cfg.tts.engine === "qwen"
+			? prov.speak(text, { voiceId: cfg.tts.qwen.voice })
+			: prov.speak(text, { engine: cfg.tts.engine });
 	}
 
 	// TTS + speak queue.
@@ -183,7 +256,7 @@ export default function (pi: ExtensionAPI) {
 	let humming: { kill: () => void } | null = null;
 
 	function engineInfo(): string {
-		return `(tts: ${ttsEngine}, stt: ${sttEngine})`;
+		return `(tts: ${cfg.tts.engine}, stt: ${cfg.stt.engine})`;
 	}
 
 	function statusFor(): string {
@@ -354,17 +427,27 @@ export default function (pi: ExtensionAPI) {
 
 	async function startVoice(ctx: ExtensionContext) {
 		if (!ready || voiceOn()) return;
+		// Re-read the config file so edits made since startup (e.g. by the agent
+		// editing picrophone.json directly) take effect, and surface any invalid
+		// values instead of silently resetting them.
+		const { config: fresh, problem } = readConfig();
+		cfg = fresh;
+		if (problem) {
+			ctx.ui.notify(`picrophone config: ${problem.summary}`, "warning");
+			// Hand the schema + errors to the agent so it can repair the file.
+			if (ctx.isIdle()) pi.sendUserMessage(problem.report);
+		}
 		setState("listening", ctx);
 		ctx.ui.setStatus("picrophone", "🎙 starting…");
-		if (sttEngine === "whisper") {
+		if (cfg.stt.engine === "whisper") {
 			ctx.ui.notify(
-				`Voice STT: whisper (${whisperModel}). First run downloads the model ` +
+				`Voice STT: whisper (${cfg.stt.whisper.model}). First run downloads the model ` +
 					"(~150 MB for base.en) to ~/Library/Caches/picrophone — one time, " +
 					"then cached. Progress shows in the footer.",
 				"info",
 			);
 		}
-		const prov = registry.stt.get(sttEngine);
+		const prov = registry.stt.get(cfg.stt.engine);
 		if (isError(prov)) {
 			ctx.ui.notify(`picrophone: ${prov.message}`, "error");
 			setState("off", ctx);
@@ -372,7 +455,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		stt = prov.start((msg: SttMessage) => handleStt(msg, ctx), {
 			silenceMs: 1200,
-			model: sttEngine === "whisper" ? whisperModel : undefined,
+			model: cfg.stt.engine === "whisper" ? whisperModelId(cfg.stt.whisper.model) : undefined,
 		});
 	}
 
@@ -496,52 +579,4 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Switch the STT engine (persisted). `whisper` runs locally via WhisperKit;
-	// `apple` uses the native SFSpeechRecognizer. Takes effect next time voice
-	// mode starts. Optional second arg sets the whisper model.
-	pi.registerCommand("voice-stt", {
-		description: "Set the STT engine: apple (native) or whisper (local). Optional: whisper model name.",
-		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/).filter(Boolean);
-			const want = (parts[0] || "").toLowerCase();
-			if (want !== "apple" && want !== "whisper") {
-				ctx.ui.notify(
-					`STT engine: ${sttEngine}${sttEngine === "whisper" ? ` (${whisperModel})` : ""}. ` +
-						"Usage: /voice-stt apple | whisper [model]",
-					"info",
-				);
-				return;
-			}
-			sttEngine = want;
-			if (want === "whisper" && parts[1]) whisperModel = parts[1];
-			persist();
-			const label = want === "whisper" ? `whisper (${whisperModel})` : "apple (native)";
-			const note = voiceOn() ? " Restart voice mode (/voice off, then on) to apply." : "";
-			ctx.ui.notify(`STT engine set to ${label}.${note}`, "info");
-		},
-	});
-
-	// Switch the TTS (read-aloud) engine (persisted, takes effect immediately).
-	// `qwen` runs on-device Qwen3-TTS; pass a Qwen3 speaker id as a second arg
-	// (ryan, aiden, serena, vivian, eric, dylan, sohee, ono-anna, uncle-fu).
-	pi.registerCommand("voice-tts", {
-		description: "Set the read-aloud engine: auto | av | say | qwen [speaker].",
-		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/).filter(Boolean);
-			const want = (parts[0] || "").toLowerCase();
-			if (want !== "auto" && want !== "av" && want !== "say" && want !== "qwen") {
-				const cur = ttsEngine === "qwen" ? `qwen (${qwenVoice})` : ttsEngine;
-				ctx.ui.notify(
-					`TTS engine: ${cur}. Usage: /voice-tts auto | av | say | qwen [speaker]`,
-					"info",
-				);
-				return;
-			}
-			ttsEngine = want;
-			if (want === "qwen" && parts[1]) qwenVoice = parts[1].toLowerCase();
-			persist();
-			const label = want === "qwen" ? `qwen (${qwenVoice})` : want;
-			ctx.ui.notify(`TTS engine set to ${label}.`, "info");
-		},
-	});
 }

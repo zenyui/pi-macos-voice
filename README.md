@@ -51,12 +51,13 @@ To pin a version: `pi install npm:picrophone@0.8.1`. Remove with
 
 - **Apple Silicon or Intel** — universal binary (arm64 + x86_64), **macOS 13+**.
 - **Dictation:** `whisper` (local [WhisperKit](https://github.com/argmaxinc/WhisperKit),
-  default; models `tiny.en` → `large-v3-turbo`) or `apple` (native
+  default; models `tiny` → `large`) or `apple` (native
   `SFSpeechRecognizer`).
 - **Read-aloud:** `av` (`AVSpeechSynthesizer`, default), `say`, or `qwen`
   (on-device Qwen3-TTS).
 
-Switch engines with `/voice-stt` and `/voice-tts`. Full engine and model
+Configure engines in `~/.pi/agent/picrophone.json` (see
+**[docs/configuration.md](docs/configuration.md)**). Full engine and model
 reference: **[docs/engines.md](docs/engines.md)**.
 
 ### Windows (coming soon)
