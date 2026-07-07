@@ -31,7 +31,7 @@ const WHISPER_MODELS = {
 	tiny: "tiny.en",
 	base: "base.en",
 	small: "small.en",
-	large: "large-v3-turbo",
+	large: "large-v3",
 } as const;
 const QWEN_SPEAKERS = [
 	"ryan", "aiden", "serena", "vivian", "eric", "dylan", "sohee", "ono-anna", "uncle-fu",
