@@ -2,7 +2,7 @@ import { CONFIG_DIR_NAME, type ExtensionAPI, type ExtensionContext } from "@eare
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { Check } from "typebox/value";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -164,7 +164,10 @@ export default function (pi: ExtensionAPI) {
 	let stt: SttSession | null = null;
 	let ready = false; // binary present + version ok
 	let cfg: VoiceConfig = loadConfig();
-	const persist = () => saveConfig(cfg);
+	// Seed the config file on first run so there's a documented, editable file on
+	// disk. Settings are changed by editing this file (or asking the agent to);
+	// changes apply on the next /voice start.
+	if (!existsSync(CONFIG_PATH)) saveConfig(cfg);
 	let micMuted = false; // user paused dictation via voice ("mute"); only unmute is heard
 	const voiceOn = () => state !== "off";
 
@@ -520,66 +523,4 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Switch the STT engine (persisted). `whisper` runs locally via WhisperKit;
-	// `apple` uses the native SFSpeechRecognizer. Takes effect next time voice
-	// mode starts. Optional second arg sets the whisper model.
-	pi.registerCommand("voice-stt", {
-		description: "Set the STT engine: apple (native) or whisper (local). Optional: whisper model name.",
-		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/).filter(Boolean);
-			const want = (parts[0] || "").toLowerCase();
-			if (want !== "apple" && want !== "whisper") {
-				ctx.ui.notify(
-					`STT engine: ${cfg.stt.engine}${cfg.stt.engine === "whisper" ? ` (${cfg.stt.whisper.model})` : ""}. ` +
-						"Usage: /voice-stt apple | whisper [model]",
-					"info",
-				);
-				return;
-			}
-			if (want === "whisper" && parts[1]) {
-				const model = parts[1].toLowerCase();
-				if (!(model in WHISPER_MODELS)) {
-					ctx.ui.notify(`Unknown whisper model "${model}". Options: ${Object.keys(WHISPER_MODELS).join(", ")}.`, "warning");
-					return;
-				}
-				cfg.stt.whisper.model = model as WhisperModel;
-			}
-			cfg.stt.engine = want;
-			persist();
-			const label = want === "whisper" ? `whisper (${cfg.stt.whisper.model})` : "apple (native)";
-			const note = voiceOn() ? " Restart voice mode (/voice off, then on) to apply." : "";
-			ctx.ui.notify(`STT engine set to ${label}.${note}`, "info");
-		},
-	});
-
-	// Switch the TTS (read-aloud) engine (persisted, takes effect immediately).
-	// `qwen` runs on-device Qwen3-TTS; pass a Qwen3 speaker id as a second arg
-	// (ryan, aiden, serena, vivian, eric, dylan, sohee, ono-anna, uncle-fu).
-	pi.registerCommand("voice-tts", {
-		description: "Set the read-aloud engine: auto | av | say | qwen [speaker].",
-		handler: async (args, ctx) => {
-			const parts = args.trim().split(/\s+/).filter(Boolean);
-			const want = (parts[0] || "").toLowerCase();
-			if (want !== "auto" && want !== "av" && want !== "say" && want !== "qwen") {
-				const cur = cfg.tts.engine === "qwen" ? `qwen (${cfg.tts.qwen.voice})` : cfg.tts.engine;
-				ctx.ui.notify(
-					`TTS engine: ${cur}. Usage: /voice-tts auto | av | say | qwen [speaker]`,
-					"info",
-				);
-				return;
-			}
-			if (want === "qwen" && parts[1]) {
-				const voice = parts[1].toLowerCase();
-				if (!(QWEN_SPEAKERS as readonly string[]).includes(voice)) {
-					ctx.ui.notify(`Unknown Qwen speaker "${voice}". Options: ${QWEN_SPEAKERS.join(", ")}.`, "warning");
-					return;
-				}
-				cfg.tts.qwen.voice = voice as QwenVoice;
-			}
-			cfg.tts.engine = want;
-			persist();
-			const label = want === "qwen" ? `qwen (${cfg.tts.qwen.voice})` : want;
-			ctx.ui.notify(`TTS engine set to ${label}.`, "info");
-		},
-	});
 }

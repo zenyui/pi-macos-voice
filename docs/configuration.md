@@ -2,10 +2,10 @@
 
 ## Config file
 
-Voice-mode settings live in `~/.pi/agent/picrophone.json`. Edit it directly (or
-use the `/voice-stt` / `/voice-tts` commands). Changes are picked up the next
-time voice mode starts (`/voice`), which validates the whole file — if anything
-is invalid it warns and falls back to defaults until you fix it.
+Voice-mode settings live in `~/.pi/agent/picrophone.json` (seeded with defaults
+on first run). Edit it directly, or ask the agent to. Changes are picked up the
+next time voice mode starts (`/voice`), which validates the whole file — if
+anything is invalid it warns and falls back to defaults until you fix it.
 
 Settings are grouped by section (`stt`, `tts`), each with an `engine` plus a
 sub-object per provider for that provider's own settings.
