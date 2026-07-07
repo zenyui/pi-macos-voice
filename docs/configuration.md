@@ -2,27 +2,34 @@
 
 ## Config file
 
-Voice-mode settings live in `~/.pi/agent/pivoice.json`. Edit it directly (or use
-the `/voice-stt` / `/voice-tts` commands). Changes are picked up the next time
-voice mode starts (`/voice`), which also validates the file and warns about any
-invalid values (falling back to the default for that field).
+Voice-mode settings live in `~/.pi/agent/picrophone.json`. Edit it directly (or
+use the `/voice-stt` / `/voice-tts` commands). Changes are picked up the next
+time voice mode starts (`/voice`), which validates the whole file — if anything
+is invalid it warns and falls back to defaults until you fix it.
+
+Settings are grouped by section (`stt`, `tts`), each with an `engine` plus a
+sub-object per provider for that provider's own settings.
 
 ```json
 {
-  "version": 1,
-  "sttEngine": "whisper",
-  "whisperModel": "base.en",
-  "ttsEngine": "av",
-  "qwenVoice": "aiden"
+  "version": 2,
+  "stt": {
+    "engine": "whisper",
+    "whisper": { "model": "base" }
+  },
+  "tts": {
+    "engine": "av",
+    "qwen": { "voice": "aiden" }
+  }
 }
 ```
 
 | Field | Values | Default | Notes |
 | --- | --- | --- | --- |
-| `sttEngine` | `whisper` \| `apple` | `whisper` | Dictation back-end. |
-| `whisperModel` | `tiny.en`, `base.en`, `small.en`, `large-v3-turbo`, … | `base.en` | Only used when `sttEngine` is `whisper`. |
-| `ttsEngine` | `auto` \| `av` \| `say` \| `qwen` | `av` | Read-aloud back-end. |
-| `qwenVoice` | `ryan`, `aiden`, `serena`, `vivian`, `eric`, `dylan`, `sohee`, `ono-anna`, `uncle-fu` | `aiden` | Only used when `ttsEngine` is `qwen`. |
+| `stt.engine` | `whisper` \| `apple` | `whisper` | Dictation back-end. |
+| `stt.whisper.model` | `tiny`, `base`, `small`, `large` | `base` | Used when `stt.engine` is `whisper`. Mapped to the WhisperKit model on our side. |
+| `tts.engine` | `auto` \| `av` \| `say` \| `qwen` | `av` | Read-aloud back-end. |
+| `tts.qwen.voice` | `ryan`, `aiden`, `serena`, `vivian`, `eric`, `dylan`, `sohee`, `ono-anna`, `uncle-fu` | `aiden` | Used when `tts.engine` is `qwen`. |
 
 See [engines](engines.md) for what each engine does.
 

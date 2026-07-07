@@ -15,7 +15,7 @@ restart voice mode to apply).
 
 **Whisper models** (download on first use, cached under
 `~/Library/Caches/picrophone`) — smaller is faster, larger is more accurate:
-`tiny.en`, `base.en` (default), `small.en`, `large-v3-turbo`, …
+`tiny`, `base` (default), `small`, `large`.
 
 ## TTS (read-aloud)
 
