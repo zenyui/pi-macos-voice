@@ -383,6 +383,25 @@ export default function (pi: ExtensionAPI) {
 		return speaking !== null || Date.now() < suppressInputUntil;
 	}
 
+	// Send a spoken utterance, picking the delivery mode from the live busy/idle
+	// state: steer while mid-turn, a fresh turn when idle. The state can flip
+	// between the check and the send (whisper finalizes ~1-2s late), and passing
+	// the wrong mode throws — so on failure re-check and retry with the opposite
+	// mode rather than silently dropping the utterance.
+	async function deliverSpoken(content: string, ctx: ExtensionContext) {
+		const send = () =>
+			ctx.isIdle()
+				? pi.sendUserMessage(content)
+				: pi.sendUserMessage(content, { deliverAs: "steer" });
+		try {
+			await send();
+		} catch {
+			try {
+				await send();
+			} catch {}
+		}
+	}
+
 	// Spoken "stop": flush readback, stop hum, abort the turn (like Esc).
 	function handleStop(ctx: ExtensionContext) {
 		clearSpeakQueue();
@@ -440,13 +459,15 @@ export default function (pi: ExtensionAPI) {
 				// (thinking or reading a reply back), explicitly steer so the
 				// utterance barges in and redirects the current turn rather than
 				// stacking a separate one. When idle, send a plain message that
-				// starts a fresh turn. (sendUserMessage throws if a delivery mode
-				// is passed while idle / omitted while streaming, so branch here.)
-				if (ctx.isIdle()) {
-					void pi.sendUserMessage(`${MIC_PREFIX}${text}`);
-				} else {
-					void pi.sendUserMessage(`${MIC_PREFIX}${text}`, { deliverAs: "steer" });
-				}
+				// starts a fresh turn.
+				//
+				// The busy/idle state can flip between this check and the async send
+				// (whisper finalizes a transcript ~1-2s after speech, so the turn may
+				// end in that window). sendUserMessage throws if a delivery mode is
+				// passed while idle, or omitted while streaming — so a stale choice
+				// would silently drop the utterance. Re-check and retry with the
+				// opposite mode so spoken input is never lost to that race.
+				void deliverSpoken(`${MIC_PREFIX}${text}`, ctx);
 				break;
 			}
 			case "permission":
