@@ -436,7 +436,17 @@ export default function (pi: ExtensionAPI) {
 					setMicMuted(true, ctx);
 					break;
 				}
-				pi.sendUserMessage(`${MIC_PREFIX}${text}`);
+				// Deliver based on whether the agent is busy. If it's mid-turn
+				// (thinking or reading a reply back), explicitly steer so the
+				// utterance barges in and redirects the current turn rather than
+				// stacking a separate one. When idle, send a plain message that
+				// starts a fresh turn. (sendUserMessage throws if a delivery mode
+				// is passed while idle / omitted while streaming, so branch here.)
+				if (ctx.isIdle()) {
+					void pi.sendUserMessage(`${MIC_PREFIX}${text}`);
+				} else {
+					void pi.sendUserMessage(`${MIC_PREFIX}${text}`, { deliverAs: "steer" });
+				}
 				break;
 			}
 			case "permission":

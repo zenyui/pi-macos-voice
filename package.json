@@ -1,6 +1,6 @@
 {
   "name": "picrophone",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "On-device dictation + text-to-speech bridge for the pi coding agent (macOS; Windows coming soon).",
   "type": "module",
   "keywords": [
@@ -17,8 +17,8 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "picrophone-darwin": "0.10.2",
-    "picrophone-win32": "0.10.2"
+    "picrophone-darwin": "0.10.3",
+    "picrophone-win32": "0.10.3"
   },
   "scripts": {
     "gen-version": "node scripts/gen-version.mjs",
