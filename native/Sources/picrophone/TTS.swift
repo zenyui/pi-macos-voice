@@ -12,6 +12,12 @@ import Hub
 // Reads text from args or stdin; blocks until playback ends.
 
 private final class AVDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    // Set once the utterance actually begins so the watchdog can tell "hasn't
+    // started yet" from "finished without a callback."
+    var started = false
+    func speechSynthesizer(_ s: AVSpeechSynthesizer, didStart u: AVSpeechUtterance) {
+        started = true
+    }
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
         CFRunLoopStop(CFRunLoopGetMain())
     }
@@ -84,7 +90,32 @@ private func speakAV(_ text: String, voiceId: String?, rate: Float?) -> Never {
 
     installExitOnSignal()
     synth.speak(utterance)
-    CFRunLoopRun() // stopped by the delegate on finish/cancel
+
+    // Watchdog: AVSpeechSynthesizer intermittently never fires didFinish/
+    // didCancel — especially for short utterances and the first utterance on a
+    // freshly-created synth. Streaming read-aloud spawns a new process (new
+    // synth) per sentence, so every fragment is a "first utterance" and the
+    // missed callback shows up regularly, hanging this process forever (until
+    // the extension's 120s safety kill) and stranding voice mode in the
+    // "speaking" state. Poll isSpeaking and stop the run loop ourselves when
+    // playback has clearly ended, so we don't depend on the delegate alone.
+    let start = Date()
+    let startGrace: TimeInterval = 3.0 // allow slow synth/audio-session warmup
+    let watchdog = Timer(timeInterval: 0.1, repeats: true) { [weak synth, weak delegate] t in
+        guard let synth else { CFRunLoopStop(CFRunLoopGetMain()); t.invalidate(); return }
+        let began = delegate?.started ?? false
+        if synth.isSpeaking || synth.isPaused { return } // still going
+        // Not speaking. Either it finished (began == true) or it never started
+        // within the grace window (silent failure) — both mean we're done.
+        if began || Date().timeIntervalSince(start) > startGrace {
+            t.invalidate()
+            CFRunLoopStop(CFRunLoopGetMain())
+        }
+    }
+    RunLoop.main.add(watchdog, forMode: .common)
+
+    CFRunLoopRun() // stopped by the delegate on finish/cancel, or the watchdog
+    watchdog.invalidate()
     exit(0)
 }
 

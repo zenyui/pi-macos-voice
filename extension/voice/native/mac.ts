@@ -72,6 +72,12 @@ export function speak(text: string, opts: { engine?: string; voiceId?: string } 
 	child.stdin.end(text);
 	// Resolve on the FIRST of exit/close/error so `speaking` can never get stuck
 	// (a stuck handle would deadlock all further input). Safety timer too.
+	// The primary defense against a hung synth is the Swift-side watchdog
+	// (AVSpeechSynthesizer sometimes never fires didFinish); this length-aware
+	// cap is a last resort for any engine (say/qwen) that wedges. Scale with the
+	// text so long readouts aren't cut off, but stay far below the old flat 120s
+	// so a stuck process can't strand voice mode in "speaking".
+	const safetyMs = Math.min(120_000, Math.max(15_000, text.length * 250));
 	const done = new Promise<void>((resolve) => {
 		let settled = false;
 		const finish = () => {
@@ -85,7 +91,7 @@ export function speak(text: string, opts: { engine?: string; voiceId?: string } 
 				child.kill("SIGKILL");
 			} catch {}
 			finish();
-		}, 120_000);
+		}, safetyMs);
 		child.on("exit", finish);
 		child.on("close", finish);
 		child.on("error", finish);
